@@ -11,16 +11,11 @@ AutoMarker is a Python-based GUI application that allows users to place markers 
 
 ## Installation
 
-AutoMarker is packaged as a standalone executable using PyInstaller. This means that the user does not need to install Python or any dependencies to run the application.
-
-To install AutoMarker, follow these steps:
-
-1. Download the executable file for your operating system from the provided source.
-2. Run the downloaded file to install AutoMarker.
+AutoMarker is packaged as a standalone executable using PyInstaller and its source code is also available on Github. To obtain the latest release, get it for cheap on Gumroad (in the form of .exe or .dmg) or just install Python and run the script! You will need librosa and pymiere libraries, and both are available to install using pip. My advice if you are new using python is creating a venv first, and then activating it and installing the libraries there.
 
 ## Usage
 
-After installing AutoMarker, you can launch it from your system's application menu. The application will open in a new window.
+If you installed using the packaged app, you can launch it from your system's application menu. The application will open in a new window.
 
 To use AutoMarker, follow these steps:
 
@@ -30,15 +25,15 @@ To use AutoMarker, follow these steps:
 
 ## Troubleshooting
 
-If you encounter any issues while using AutoMarker, ensure that Adobe Premiere Pro is installed and running. If the problem persists, please get in touch for further assistance.
+If you encounter any issues while using AutoMarker, ensure that Adobe Premiere Pro is installed and running. If the problem persists, please open an issue and I'll try to check it as soon as I'm free.
 
 ## Contributing
 
-We welcome contributions to AutoMarker. If you have a feature request, bug report, or want to improve the documentation, please submit an issue or pull request on our GitHub repository.
+I welcome contributions to AutoMarker. If you have a feature request, bug report, or want to improve the documentation, please submit an issue or pull request on our GitHub repository.
 
 ## License
 
-AutoMarker is licensed under the MIT License. For more information, please refer to the LICENSE file in the repository.
+AutoMarker is licensed under the GNU General Public License 3.0. Check the LICENSE.md file for specific information about licensing.
 
 ## Contact
 
