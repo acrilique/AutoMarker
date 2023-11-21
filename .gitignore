@@ -1,0 +1,5 @@
+build/
+dist/
+audio.mp3
+audio.wav
+.venv/
