@@ -37,4 +37,5 @@ AutoMarker is licensed under the GNU General Public License 3.0. Check the LICEN
 
 ## Contact
 
-For any questions or concerns, please contact me personally at lluc.simo5@gmail.com
+For any questions or concerns, please open an issue or contact me personally at lluc.simo5@gmail.com
+I get a lot of emails so insist if you see that I dont answer.
