@@ -1,6 +1,6 @@
 # AutoMarker
 
-AutoMarker is a Python-based GUI application that allows users to place markers on a Premiere Pro active sequence based on a music file's tempo. The application uses the librosa library to detect beats in the audio file and the pymiere library to interact with Adobe Premiere Pro.
+AutoMarker is a Python-based GUI application that allows users to place markers on a Premiere Pro active sequence based on a music file's tempo. This is useful for placing clips faster when you want them to be related to the music that is playing. The application uses the librosa library to detect beats in the audio file and the pymiere library to interact with Adobe Premiere Pro.
 
 ## Features
 
