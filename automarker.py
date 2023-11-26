@@ -1,16 +1,29 @@
+# AutoMarker by acrilique.
+################################
+# Licensed under GNU GPL v3.0 #
+################################
+
 import librosa
 import tkinter as tk
 from tkinter import filedialog
 from tkinter import ttk
 from threading import Thread
+import pydub
+from pydub.playback import play
 import pymiere
 import os
+import time
 import sys
 import re
 import json
 import subprocess
 from distutils.version import StrictVersion
 import platform
+
+###############################
+###############################
+###############################
+###############################
 
 if platform.system().lower() == "windows":
     WINDOWS_SYSTEM = True
@@ -53,6 +66,12 @@ CREATE_NO_WINDOW = 0x08000000
 PREMIERE_PROCESS_NAME = "adobe premiere pro.exe" if WINDOWS_SYSTEM else "Adobe Premiere Pro"
 CEPPANEL_PROCESS_NAME = "CEPHtmlEngine.exe" if WINDOWS_SYSTEM else "CEPHtmlEngine"
 
+###############################
+###############################
+###############################
+###############################
+newWindow = None
+
 def update_runvar():
     if(is_premiere_running()[0]):
         runvar.set("Premiere is running!")
@@ -67,13 +86,8 @@ def auto_beat_marker():
         thread.start()
 
 def place_marks():
-    # Detect beats in audio file
-    info.set("Reading file from source...")
-    root.update()
-    data, samplerate = librosa.load(path=path.get())
-    info.set("Getting beat positions...")
-    root.update()
-    tempo, beatsamples = librosa.beat.beat_track(y=data, units="time") # [list] beat location in samples
+    global data
+    global beatsamples
 
     every = everyvar.get()
     offset = offsetvar.get()
@@ -91,12 +105,96 @@ def place_marks():
     info.set("Done!")
 
 def select_file():
+    global data
+    global beatsamples
+    global newWindow
+
     file_path = filedialog.askopenfilename(
         initialdir=os.path.expanduser("~"),
         title='Select an audio file',
-        filetypes=[('Audio files', ['.wav', 'mp3', '.flac', '.ogg', '.aiff']), ('All files', '.*')]
+        filetypes=[('Audio files', ['*.wav', '*.mp3', '*.flac', '*.ogg', '*.aiff']), ('All files', '.*')]
     )
-    path.set(file_path)
+
+    path.set(file_path) 
+
+    info.set("Reading file from source...")
+    root.update()
+    
+    data, samplerate = librosa.load(path=path.get())
+    
+    info.set("Getting beat positions...")
+    root.update()
+    
+    tempo, beatsamples = librosa.beat.beat_track(y=data, units="time") # [list] beat location in samples
+    
+    info.set("Displaying preview")
+    root.update()
+
+    newWindow = tk.Toplevel(root)
+    newWindow.title("Marker placement")
+    newWindow.geometry("1000x380")
+
+    canvas = tk.Canvas(newWindow, width=1000, height=300, bg="white")
+    updateButton = ttk.Button(newWindow, text="Update markers", command=update_markers)
+    playButton = ttk.Button(newWindow, text="Play", command=play_preview)
+
+    stepsize = int(len(data[:samplerate * 10]) / 1000)
+    buffer = [int(x * 130 + 210) for x in data[:samplerate * 10:stepsize]]
+    for i in range(len(buffer)-1):
+        canvas.create_line(i, buffer[i], i + 1, buffer[i+1], fill="black")
+
+    # Place markers from the first ten seconds as little rectangles on the canvas, beatsamples are in seconds
+    for i in range(beatsamples.size):
+        beat = beatsamples[i]
+        
+        if beat < 10:
+            canvas.create_rectangle((beat*100 - 8, 90, beat*100 + 8, 110), fill="green", tags="marker") 
+
+    canvas.pack()
+    updateButton.pack()
+    playButton.pack()
+
+def play_preview():
+    global start_time
+
+    track = pydub.AudioSegment.from_file(path.get())
+    segment = track[:10000]
+    thread = Thread(target=play, args=(segment,))
+    thread.daemon = True
+    thread.start()
+    start_time = time.time()  # Get the current time
+    track_line()
+
+def track_line():
+    global newWindow
+    global start_time
+
+    elapsed_time = time.time() - start_time  # Calculate elapsed time
+    counter = int(elapsed_time * 50)  # Calculate position of line
+
+    if counter < 500:
+        newWindow.children["!canvas"].delete("line")
+        newWindow.children["!canvas"].create_line(counter*2, 300, counter*2, 120, fill="red", tags="line")
+        delay = max(1, int((counter + 1) / 50 - elapsed_time))  # Calculate delay for next update
+        newWindow.children["!canvas"].after(delay, track_line)
+    else:
+        newWindow.children["!canvas"].delete("line")
+
+def update_markers():
+    global beatsamples
+    global newWindow
+
+    # Delete all markers from the canvas
+    newWindow.update()
+    canvas = newWindow.children["!canvas"]
+    canvas.delete("marker")
+
+    # Place markers from the first ten seconds as little rectangles on the canvas, beatsamples are in seconds
+    # according to the new values from the sliders
+    for beat in beatsamples[offsetvar.get()::everyvar.get()]:
+        if beat < 10:
+            canvas.create_rectangle((beat*100 - 8, 90, beat*100 + 8, 110), fill="green", tags="marker")
+    newWindow.update()
 
 root = tk.Tk()
 root.title("AutoMarker")
@@ -136,7 +234,7 @@ pathLabel = tk.Label(mainframe, textvariable=path)
 infoLabel = tk.Label(mainframe, textvariable=info)
 readmeButton = ttk.Button(mainframe, text="Readme", command=lambda: os.startfile(os.path.join(basedir, 'README.md')))
 selectFileButton = ttk.Button(mainframe, text="Select audio file", command=select_file, width=40)
-doButton = ttk.Button(mainframe, text="Create markers", command=auto_beat_marker, width=40)
+createMarkersButton = ttk.Button(mainframe, text="Create markers", command=auto_beat_marker, width=40)
 everyLabel = tk.Label(mainframe, text="Place markers every x beats")
 everyScale = ttk.LabeledScale(mainframe, variable=everyvar, from_=1, to=16, compound='bottom')
 offsetLabel = tk.Label(mainframe, text="Offset first beat")
@@ -150,7 +248,7 @@ authorLabel.grid(column=1, row=0, sticky=(tk.W))
 readmeButton.grid(column=1, row=0, sticky=(tk.E))
 pathLabel.grid(column=1, row=1, sticky=(tk.W, tk.E))
 selectFileButton.grid(column=1, row=2, sticky=(tk.W, tk.E))
-doButton.grid(column=1, row=3, sticky=(tk.W, tk.E))
+createMarkersButton.grid(column=1, row=3, sticky=(tk.W, tk.E))
 everyLabel.grid(column=1, row=4, sticky=(tk.W))
 everyScale.grid(column=1, row=5, sticky=(tk.W, tk.E))
 offsetLabel.grid(column=1, row=6, sticky=(tk.W))
@@ -165,8 +263,12 @@ for child in mainframe.winfo_children():
 
 root.bind('<Return>', auto_beat_marker)
 
-############################################
-############################################
+###########################################
+###########################################
+###########################################
+###########################################
+###########################################
+###########################################
 # Functions to check if premiere is running
 def is_premiere_running():
     """
@@ -308,6 +410,10 @@ def _get_installed_softwares_info(name_filter, names=["DisplayVersion", "Install
             continue
         apps_info.append(dict({n: wr.QueryValueEx(subkey, n)[0] for n in names}, DisplayName=soft_name))
     return apps_info
+###########################################
+###########################################
+###########################################
+###########################################
 ###########################################
 ###########################################
 
