@@ -141,6 +141,7 @@ everyLabel = tk.Label(mainframe, text="Place markers every x beats")
 everyScale = ttk.LabeledScale(mainframe, variable=everyvar, from_=1, to=16, compound='bottom')
 offsetLabel = tk.Label(mainframe, text="Offset first beat")
 offsetScale = ttk.LabeledScale(mainframe, variable=offsetvar, from_=0, to=16, compound='bottom')
+versionLabel = tk.Label(mainframe, text="v0.1.0")
 
 everyScale.update()
 offsetScale.update()
@@ -150,13 +151,14 @@ readmeButton.grid(column=1, row=0, sticky=(tk.E))
 pathLabel.grid(column=1, row=1, sticky=(tk.W, tk.E))
 selectFileButton.grid(column=1, row=2, sticky=(tk.W, tk.E))
 doButton.grid(column=1, row=3, sticky=(tk.W, tk.E))
-infoLabel.grid(column=1,row=8, sticky=(tk.E))
 everyLabel.grid(column=1, row=4, sticky=(tk.W))
 everyScale.grid(column=1, row=5, sticky=(tk.W, tk.E))
 offsetLabel.grid(column=1, row=6, sticky=(tk.W))
 offsetScale.grid(column=1, row=7, sticky=(tk.W, tk.E))
-
 runvarLabel.grid(column=1, row=8, sticky=(tk.W))
+infoLabel.grid(column=1,row=8, sticky=(tk.E))
+versionLabel.grid(column=1, row=9, sticky=(tk.E))
+
 
 for child in mainframe.winfo_children(): 
     child.grid_configure(padx=5, pady=5)
