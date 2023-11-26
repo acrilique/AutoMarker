@@ -1,3 +1,8 @@
+# AutoMarker by acrilique.
+################################
+# Licensed under GNU GPL v3.0 #
+################################
+
 import librosa
 import tkinter as tk
 from tkinter import filedialog
@@ -7,6 +12,7 @@ import pydub
 from pydub.playback import play
 import pymiere
 import os
+import time
 import sys
 import re
 import json
@@ -149,11 +155,30 @@ def select_file():
     playButton.pack()
 
 def play_preview():
+    global start_time
 
     track = pydub.AudioSegment.from_file(path.get())
     segment = track[:10000]
-    play(segment)
-    
+    thread = Thread(target=play, args=(segment,))
+    thread.daemon = True
+    thread.start()
+    start_time = time.time()  # Get the current time
+    track_line()
+
+def track_line():
+    global newWindow
+    global start_time
+
+    elapsed_time = time.time() - start_time  # Calculate elapsed time
+    counter = int(elapsed_time * 50)  # Calculate position of line
+
+    if counter < 500:
+        newWindow.children["!canvas"].delete("line")
+        newWindow.children["!canvas"].create_line(counter*2, 300, counter*2, 120, fill="red", tags="line")
+        delay = max(1, int((counter + 1) / 50 - elapsed_time))  # Calculate delay for next update
+        newWindow.children["!canvas"].after(delay, track_line)
+    else:
+        newWindow.children["!canvas"].delete("line")
 
 def update_markers():
     global beatsamples
