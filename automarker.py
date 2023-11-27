@@ -3,16 +3,15 @@
 # Licensed under GNU GPL v3.0 #
 ################################
 
-import librosa
 import tkinter as tk
 from tkinter import filedialog
 from tkinter import ttk
 from threading import Thread
-import pydub
-from pydub.playback import play
+import librosa
+import pyaudio
 import pymiere
 import os
-import time
+import numpy
 import sys
 import re
 import json
@@ -20,6 +19,7 @@ import subprocess
 from distutils.version import StrictVersion
 import platform
 
+sample_rate = 44100
 ###############################
 ###############################
 ###############################
@@ -70,7 +70,6 @@ CEPPANEL_PROCESS_NAME = "CEPHtmlEngine.exe" if WINDOWS_SYSTEM else "CEPHtmlEngin
 ###############################
 ###############################
 ###############################
-newWindow = None
 
 def update_runvar():
     if(is_premiere_running()[0]):
@@ -120,15 +119,17 @@ def select_file():
     info.set("Reading file from source...")
     root.update()
     
-    data, samplerate = librosa.load(path=path.get())
+    data, samplerate = librosa.load(path=path.get(), sr=sample_rate, mono=True)
     
     info.set("Getting beat positions...")
     root.update()
     
-    tempo, beatsamples = librosa.beat.beat_track(y=data, units="time") # [list] beat location in samples
+    tempo, beatsamples = librosa.beat.beat_track(y=data, units="time", sr=sample_rate)
     
     info.set("Displaying preview")
     root.update()
+
+    data = numpy.asfortranarray(data)
 
     newWindow = tk.Toplevel(root)
     newWindow.title("Marker placement")
@@ -138,12 +139,13 @@ def select_file():
     updateButton = ttk.Button(newWindow, text="Update markers", command=update_markers)
     playButton = ttk.Button(newWindow, text="Play", command=play_preview)
 
+    # Draw the waveform 
     stepsize = int(len(data[:samplerate * 10]) / 1000)
     buffer = [int(x * 130 + 210) for x in data[:samplerate * 10:stepsize]]
     for i in range(len(buffer)-1):
         canvas.create_line(i, buffer[i], i + 1, buffer[i+1], fill="black")
 
-    # Place markers from the first ten seconds as little rectangles on the canvas, beatsamples are in seconds
+    # Draw markers 
     for i in range(beatsamples.size):
         beat = beatsamples[i]
         
@@ -154,31 +156,46 @@ def select_file():
     updateButton.pack()
     playButton.pack()
 
-def play_preview():
-    global start_time
+def callback(in_data, frame_count, time_info, status):
+    global playpos
+    chunk = data[playpos:playpos+frame_count]
+    playpos += frame_count
+    if playpos >= sample_rate*10:
+        return (chunk, pyaudio.paComplete)
+    return (chunk, pyaudio.paContinue)
 
-    track = pydub.AudioSegment.from_file(path.get())
-    segment = track[:10000]
-    thread = Thread(target=play, args=(segment,))
+def play_preview():
+    global stream, iid
+    stream = p.open(format=pyaudio.paFloat32, channels=1, rate=sample_rate, output=True, stream_callback=callback)
+    thread = Thread(target=track_line)
     thread.daemon = True
     thread.start()
-    start_time = time.time()  # Get the current time
-    track_line()
+    stream.start_stream()
+    iid = newWindow.children["!canvas"].bind("<Button-1>", on_left_click)
+    
+def on_left_click(event):
+    if 100 <= event.y <= 300:
+        playpos_param.set(event.x)
+        changepos.set(True)
 
 def track_line():
     global newWindow
-    global start_time
+    global playpos
+    global stream
+    if changepos.get():
+        playpos = int(playpos_param.get()/999*sample_rate*10)
+        changepos.set(False)
+    position = int(playpos*999/sample_rate/10)
+    newWindow.children["!canvas"].delete("line")
+    newWindow.children["!canvas"].create_line(position, 120, position, 300, fill="red", tags="line")
+    newWindow.update()
+    if (stream.is_active()): newWindow.after(10, track_line)
+    else: 
 
-    elapsed_time = time.time() - start_time  # Calculate elapsed time
-    counter = int(elapsed_time * 50)  # Calculate position of line
-
-    if counter < 500:
+        stream.close()
+        playpos = 0
         newWindow.children["!canvas"].delete("line")
-        newWindow.children["!canvas"].create_line(counter*2, 300, counter*2, 120, fill="red", tags="line")
-        delay = max(1, int((counter + 1) / 50 - elapsed_time))  # Calculate delay for next update
-        newWindow.children["!canvas"].after(delay, track_line)
-    else:
-        newWindow.children["!canvas"].delete("line")
+        newWindow.children["!canvas"].unbind("<Button-1>", iid)
 
 def update_markers():
     global beatsamples
@@ -196,76 +213,6 @@ def update_markers():
             canvas.create_rectangle((beat*100 - 8, 90, beat*100 + 8, 110), fill="green", tags="marker")
     newWindow.update()
 
-root = tk.Tk()
-root.title("AutoMarker")
-
-# Get the window width and height
-window_width = root.winfo_reqwidth()
-window_height = root.winfo_reqheight()
-
-# Get the screen width and height
-screen_width = root.winfo_screenwidth()
-screen_height = root.winfo_screenheight()
-
-# Calculate the position of the left and top borders of the window
-position_top = int(screen_height / 2 - window_height / 2)
-position_right = int(screen_width / 2 - window_width / 2)
-
-# Set the geometry of the window
-root.geometry("+{}+{}".format(position_right, position_top))
-
-style = ttk.Style()
-style.theme_use(themename='xpnative')
-
-mainframe = tk.Frame(root)
-mainframe.grid(column=0, row=0, sticky=(tk.N, tk.W, tk.E, tk.S))
-root.columnconfigure(0, weight=1)
-root.rowconfigure(0, weight=1)
-
-runvar = tk.StringVar()
-path = tk.StringVar()
-info = tk.StringVar()
-everyvar = tk.IntVar(value=1)
-offsetvar = tk.IntVar(value=0)
-
-authorLabel = tk.Label(mainframe, text="by acrilique")
-runvarLabel = tk.Label(mainframe, textvariable=runvar)
-pathLabel = tk.Label(mainframe, textvariable=path)
-infoLabel = tk.Label(mainframe, textvariable=info)
-readmeButton = ttk.Button(mainframe, text="Readme", command=lambda: os.startfile(os.path.join(basedir, 'README.md')))
-selectFileButton = ttk.Button(mainframe, text="Select audio file", command=select_file, width=40)
-createMarkersButton = ttk.Button(mainframe, text="Create markers", command=auto_beat_marker, width=40)
-everyLabel = tk.Label(mainframe, text="Place markers every x beats")
-everyScale = ttk.LabeledScale(mainframe, variable=everyvar, from_=1, to=16, compound='bottom')
-offsetLabel = tk.Label(mainframe, text="Offset first beat")
-offsetScale = ttk.LabeledScale(mainframe, variable=offsetvar, from_=0, to=16, compound='bottom')
-versionLabel = tk.Label(mainframe, text="v0.1.0")
-
-everyScale.update()
-offsetScale.update()
-
-authorLabel.grid(column=1, row=0, sticky=(tk.W))
-readmeButton.grid(column=1, row=0, sticky=(tk.E))
-pathLabel.grid(column=1, row=1, sticky=(tk.W, tk.E))
-selectFileButton.grid(column=1, row=2, sticky=(tk.W, tk.E))
-createMarkersButton.grid(column=1, row=3, sticky=(tk.W, tk.E))
-everyLabel.grid(column=1, row=4, sticky=(tk.W))
-everyScale.grid(column=1, row=5, sticky=(tk.W, tk.E))
-offsetLabel.grid(column=1, row=6, sticky=(tk.W))
-offsetScale.grid(column=1, row=7, sticky=(tk.W, tk.E))
-runvarLabel.grid(column=1, row=8, sticky=(tk.W))
-infoLabel.grid(column=1,row=8, sticky=(tk.E))
-versionLabel.grid(column=1, row=9, sticky=(tk.E))
-
-
-for child in mainframe.winfo_children(): 
-    child.grid_configure(padx=5, pady=5)
-
-root.bind('<Return>', auto_beat_marker)
-
-###########################################
-###########################################
-###########################################
 ###########################################
 ###########################################
 ###########################################
@@ -413,11 +360,77 @@ def _get_installed_softwares_info(name_filter, names=["DisplayVersion", "Install
 ###########################################
 ###########################################
 ###########################################
-###########################################
-###########################################
-###########################################
+
+root = tk.Tk()
+root.title("AutoMarker")
+newWindow = None
+playpos = 0
+p = pyaudio.PyAudio()
+stream = None
+
+# Get the window width and height
+window_width = root.winfo_reqwidth()
+window_height = root.winfo_reqheight()
+
+# Get the screen width and height
+screen_width = root.winfo_screenwidth()
+screen_height = root.winfo_screenheight()
+
+# Calculate the position of the left and top borders of the window
+position_top = int(screen_height / 2 - window_height / 2)
+position_right = int(screen_width / 2 - window_width / 2)
+
+# Set the geometry of the window
+root.geometry("+{}+{}".format(position_right, position_top))
+
+style = ttk.Style()
+style.theme_use(themename='xpnative')
+
+mainframe = tk.Frame(root)
+mainframe.grid(column=0, row=0, sticky=(tk.N, tk.W, tk.E, tk.S))
+root.columnconfigure(0, weight=1)
+root.rowconfigure(0, weight=1)
+
+runvar = tk.StringVar()
+path = tk.StringVar()
+info = tk.StringVar()
+everyvar = tk.IntVar(value=1)
+offsetvar = tk.IntVar(value=0)
+playpos_param = tk.IntVar(value=0)
+changepos = tk.BooleanVar(value=False)
+
+authorLabel = tk.Label(mainframe, text="by acrilique")
+runvarLabel = tk.Label(mainframe, textvariable=runvar)
+pathLabel = tk.Label(mainframe, textvariable=path)
+infoLabel = tk.Label(mainframe, textvariable=info)
+readmeButton = ttk.Button(mainframe, text="Readme", command=lambda: os.startfile(os.path.join(basedir, 'README.md')))
+selectFileButton = ttk.Button(mainframe, text="Select audio file", command=select_file, width=40)
+createMarkersButton = ttk.Button(mainframe, text="Create markers", command=auto_beat_marker, width=40)
+everyLabel = tk.Label(mainframe, text="Place markers every x beats")
+everyScale = ttk.LabeledScale(mainframe, variable=everyvar, from_=1, to=16, compound='bottom')
+offsetLabel = tk.Label(mainframe, text="Offset first beat")
+offsetScale = ttk.LabeledScale(mainframe, variable=offsetvar, from_=0, to=16, compound='bottom')
+versionLabel = tk.Label(mainframe, text="v0.2.0")
+
+everyScale.update()
+offsetScale.update()
+
+authorLabel.grid(column=1, row=0, sticky=(tk.W))
+readmeButton.grid(column=1, row=0, sticky=(tk.E))
+pathLabel.grid(column=1, row=1, sticky=(tk.W, tk.E))
+selectFileButton.grid(column=1, row=2, sticky=(tk.W, tk.E))
+createMarkersButton.grid(column=1, row=3, sticky=(tk.W, tk.E))
+everyLabel.grid(column=1, row=4, sticky=(tk.W))
+everyScale.grid(column=1, row=5, sticky=(tk.W, tk.E))
+offsetLabel.grid(column=1, row=6, sticky=(tk.W))
+offsetScale.grid(column=1, row=7, sticky=(tk.W, tk.E))
+runvarLabel.grid(column=1, row=8, sticky=(tk.W))
+infoLabel.grid(column=1,row=8, sticky=(tk.E))
+versionLabel.grid(column=1, row=9, sticky=(tk.E))
 
 
+for child in mainframe.winfo_children(): 
+    child.grid_configure(padx=5, pady=5)
 
 root.iconbitmap(os.path.join(basedir, "icon.ico"))
 root.after(0, update_runvar)
