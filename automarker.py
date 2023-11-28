@@ -231,7 +231,7 @@ def update_markers():
 ###########################################
 ###########################################
 ###########################################
-# Functions to check if premiere is running
+# Functions to check if apps are running
 def is_premiere_running():
     """
     Is there a running instance of the Premiere Pro app on this machine ?
@@ -534,7 +534,12 @@ class AE_JSInterface(object):
         self.aeCom.jsNewCommandGroup()
 
         jsxTodo = "var Marker = new MarkerValue("+ comment +");"
-        jsxTodo += "app.project.item(1).markerProperty.setValueAtTime("+ str(time) +", Marker);"
+        jsxTodo += "var viewer = app.activeViewer;"
+        jsxTodo += "if (viewer.type == ViewerType.VIEWER_COMPOSITION) {"
+        jsxTodo += "    viewer.setActive();"
+        jsxTodo += "    comp = app.project.activeItem;"
+        jsxTodo += "    app.project.activeItem.markerProperty.setValueAtTime("+ str(time) +", Marker);"
+        jsxTodo += "}"
         
         self.aeCom.addCommand(jsxTodo)
         self.aeCom.jsExecuteCommand()
