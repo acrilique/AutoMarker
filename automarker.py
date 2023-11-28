@@ -18,6 +18,9 @@ import json
 import subprocess
 from distutils.version import StrictVersion
 import platform
+import time
+import winreg as _winreg
+import ctypes
 
 sample_rate = 44100
 ###############################
@@ -64,6 +67,7 @@ if flag_content == "not_installed":
 
 CREATE_NO_WINDOW = 0x08000000
 PREMIERE_PROCESS_NAME = "adobe premiere pro.exe" if WINDOWS_SYSTEM else "Adobe Premiere Pro"
+AFTERFX_PROCESS_NAME = "AfterFX.exe" if WINDOWS_SYSTEM else "Adobe After Effects"
 CEPPANEL_PROCESS_NAME = "CEPHtmlEngine.exe" if WINDOWS_SYSTEM else "CEPHtmlEngine"
 
 ###############################
@@ -72,10 +76,16 @@ CEPPANEL_PROCESS_NAME = "CEPHtmlEngine.exe" if WINDOWS_SYSTEM else "CEPHtmlEngin
 ###############################
 
 def update_runvar():
+
+    global aeApp
     if(is_premiere_running()[0]):
         runvar.set("Premiere is running!")
+    elif(is_afterfx_running()[0]):
+        if (aeApp==None):
+            aeApp = AE_JSInterface(returnFolder = os.path.join(basedir, "temp"))
+        runvar.set("After Effects is running!")
     else:
-        runvar.set("Premiere isn't running :(")
+        runvar.set("App isn't running...")
     root.after(1000, update_runvar)
 
 def auto_beat_marker():
@@ -96,11 +106,16 @@ def place_marks():
     
     info.set("Placing markers...")
     root.update()
-    end_of_sequence = pymiere.objects.app.project.activeSequence.end
-    # Create markers using pymiere
-    for sample in beatsamples:
-        if sample < end_of_sequence:
-            pymiere.objects.app.project.activeSequence.markers.createMarker(sample)
+
+    if(is_premiere_running): 
+        end_of_sequence = pymiere.objects.app.project.activeSequence.end
+        # Create markers using pymiere
+        for sample in beatsamples:
+            if sample < end_of_sequence:
+                pymiere.objects.app.project.activeSequence.markers.createMarker(sample)
+    elif(is_afterfx_running):
+        for i in range(len(beatsamples)):
+            aeApp.jsAddMarker(beatsamples[i], str(i))
     info.set("Done!")
 
 def select_file():
@@ -225,8 +240,15 @@ def is_premiere_running():
     """
     return exe_is_running(PREMIERE_PROCESS_NAME)
 
+def is_afterfx_running():
+
+    return exe_is_running(AFTERFX_PROCESS_NAME)
+
 def start_premiere(use_bat=False):
     raise SystemError("Could not guaranty premiere started")
+
+def start_afterfx(use_bat=False):
+    raise SystemError("Could not guaranty afterfx started")
 
 def exe_is_running(exe_name):
     """
@@ -250,15 +272,6 @@ def count_running_exe(exe_name):
     :return: (int) Number of process with given name running
     """
     return len(_get_pids_from_name(exe_name))
-
-def get_last_premiere_exe():
-    """
-    Get the executable path on disk of the last installed Premiere Pro version
-
-    :return: (str) path to executable
-    """
-    get_last_premiere_exe_func = _get_last_premiere_exe_windows if WINDOWS_SYSTEM else _get_last_premiere_exe_mac
-    return get_last_premiere_exe_func()
 
 def _get_pids_from_name(process_name):
     """
@@ -287,6 +300,14 @@ def _get_pids_from_name(process_name):
         lines = output.strip().splitlines()
         return list(map(int, lines))
 
+def get_last_premiere_exe():
+    """
+    Get the executable path on disk of the last installed Premiere Pro version
+
+    :return: (str) path to executable
+    """
+    get_last_premiere_exe_func = _get_last_premiere_exe_windows if WINDOWS_SYSTEM else _get_last_premiere_exe_mac
+    return get_last_premiere_exe_func()
 # ----- platform specific functions -----
 def _get_last_premiere_exe_windows():
     """
@@ -360,13 +381,176 @@ def _get_installed_softwares_info(name_filter, names=["DisplayVersion", "Install
 ###########################################
 ###########################################
 ###########################################
+# Tool to get existing windows, usefull here to check if AE is loaded
+class CurrentWindows():
+    def __init__(self):
+        self.EnumWindows = ctypes.windll.user32.EnumWindows
+        self.EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int))
+        self.GetWindowText = ctypes.windll.user32.GetWindowTextW
+        self.GetWindowTextLength = ctypes.windll.user32.GetWindowTextLengthW
+        self.IsWindowVisible = ctypes.windll.user32.IsWindowVisible
 
-root = tk.Tk()
-root.title("AutoMarker")
+        self.titles = []
+        self.EnumWindows(self.EnumWindowsProc(self.foreach_window), 0)
+
+    def foreach_window(self, hwnd, lParam):
+        if self.IsWindowVisible(hwnd):
+            length = self.GetWindowTextLength(hwnd)
+            buff = ctypes.create_unicode_buffer(length + 1)
+            self.GetWindowText(hwnd, buff, length + 1)
+            self.titles.append(buff.value)
+        return True
+
+    def getTitles(self):
+        return self.titles
+
+class AE_JSWrapper(object):
+    def __init__(self, aeVersion = "", returnFolder = ""):
+        self.aeVersion = aeVersion
+
+        # Try to find last AE version if value is not specified. Currently 24.0 is the last version.
+        if not len(self.aeVersion):
+            self.aeVersion = str(int(time.strftime("%Y")[2:]) + 1) + ".0"
+
+        # Get the AE_ exe path from the registry. 
+        try:
+            self.aeKey = _winreg.OpenKey(_winreg.HKEY_LOCAL_MACHINE, "SOFTWARE\\Adobe\\After Effects\\" + self.aeVersion)
+        except:
+            print ("ERROR: Unable to find After Effects version " + self.aeVersion + " on this computer\nTo get correct version number please check https://en.wikipedia.org/wiki/Adobe_After_Effects\nFor example, \"After Effect CC 2019\" is version \"16.0\"")
+            sys.exit()
+
+        self.aeApp = _winreg.QueryValueEx(self.aeKey, 'InstallPath')[0] + 'AfterFX.exe'          
+
+        # Get the path to the return file. Create it if it doesn't exist.
+        if not len(returnFolder):
+            returnFolder = os.path.join(basedir, "temp", "AePyJsx")
+        self.returnFile = os.path.join(returnFolder, "ae_temp_ret.txt")
+        if not os.path.exists(returnFolder):
+            os.mkdir(returnFolder)
+        
+        # Ensure the return file exists...
+        with open(self.returnFile, 'w') as f:
+                f.close()  
+            
+        # Establish the last time the temp file was modified. We use this to listen for changes. 
+        self.lastModTime = os.path.getmtime(self.returnFile)         
+        
+        # Temp file to store the .jsx commands. 
+        self.tempJsxFile = os.path.join(returnFolder, "ae_temp_com.jsx")
+        
+        # This list is used to hold all the strings which eventually become our .jsx file. 
+        self.commands = []    
+
+    def openAE(self):
+        """Pass the commands to the subprocess module."""    
+        target = [self.aeApp]
+        ret = subprocess.Popen(target)
+    
+    # This group of helper functions are used to build and execute a jsx file.
+    def jsNewCommandGroup(self):
+        """clean the commands list. Called before making a new list of commands"""
+        self.commands = []
+
+    def jsExecuteCommand(self):
+        """Pass the commands to the subprocess module."""
+        self.compileCommands()        
+        target = [self.aeApp, "-ro", self.tempJsxFile]
+        ret = subprocess.Popen(target)
+    
+    def addCommand(self, command):
+        """add a command to the commands list"""
+        self.commands.append(command)
+
+    def compileCommands(self):
+        with open(self.tempJsxFile, "wb") as f:
+            for command in self.commands:
+                f.write(command)
+
+    def jsWriteDataOut(self, returnRequest):
+        """ An example of getting a return value"""
+        com = (
+            """
+            var retVal = %s; // Ask for some kind of info about something. 
+            
+            // Write to temp file. 
+            var datFile = new File("[DATAFILEPATH]"); 
+            datFile.open("w"); 
+            datFile.writeln(String(retVal)); // return the data cast as a string.  
+            datFile.close();
+            """ % (returnRequest)
+        )
+
+        returnFileClean = "/" + self.returnFile.replace("\\", "/").replace(":", "").lower()
+        com = com.replace("[DATAFILEPATH]", returnFileClean)
+
+        self.commands.append(com)        
+        
+    def readReturn(self):
+        """Helper function to wait for AE to write some output for us."""
+        # Give time for AE to close the file...
+        time.sleep(0.1)        
+        
+        self._updated = False
+        while not self._updated:
+            self.thisModTime = os.path.getmtime(self.returnFile)
+            if str(self.thisModTime) != str(self.lastModTime):
+                self.lastModTime = self.thisModTime
+                self._updated = True
+        
+        f = open(self.returnFile, "r+")
+        content = f.readlines()
+        f.close()
+
+        res = []
+        for item in content:
+            res.append(str(item.rstrip()))
+        return res
+
+# An interface to actually call those commands. 
+class AE_JSInterface(object):
+    
+    def __init__(self, aeVersion = "", returnFolder = ""):
+        self.aeWindowName = "Adobe After Effects"
+        self.aeCom = AE_JSWrapper(aeVersion, returnFolder) # Create wrapper to handle JSX
+
+    def openAE(self):
+        self.aeCom.openAE()
+
+    def waitingAELoading(self):
+        loading = True
+        attempts = 0
+        while loading and attempts < 60:
+            for t in CurrentWindows().getTitles():
+                if self.aeWindowName.lower() in t.lower():
+                    loading = False
+                    break
+
+            attempts += 1
+            time.sleep(0.5)
+
+        return not loading
+    
+    def jsAddMarker(self, time, comment = ""):
+        self.aeCom.jsNewCommandGroup()
+
+        jsxTodo = "var Marker = new MarkerValue("+ comment +");"
+        jsxTodo += "app.project.item(1).markerProperty.setValueAtTime("+ str(time) +", Marker);"
+        
+        self.aeCom.addCommand(jsxTodo)
+        self.aeCom.jsExecuteCommand()
+###########################################
+###########################################
+
 newWindow = None
 playpos = 0
 p = pyaudio.PyAudio()
 stream = None
+
+if (is_afterfx_running()): aeApp = AE_JSInterface(returnFolder = os.path.join(basedir, "temp"))
+else: aeApp = None
+
+root = tk.Tk()
+root.title("AutoMarker")
 
 # Get the window width and height
 window_width = root.winfo_reqwidth()
