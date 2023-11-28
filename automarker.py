@@ -89,7 +89,7 @@ def update_runvar():
     root.after(1000, update_runvar)
 
 def auto_beat_marker():
-    if (is_premiere_running()[0]):
+    if (is_premiere_running()[0] or is_afterfx_running()[0]):
         thread = Thread(target=place_marks)
         thread.daemon = True
         thread.start()
@@ -107,15 +107,14 @@ def place_marks():
     info.set("Placing markers...")
     root.update()
 
-    if(is_premiere_running): 
+    if(is_premiere_running()[0]): 
         end_of_sequence = pymiere.objects.app.project.activeSequence.end
         # Create markers using pymiere
         for sample in beatsamples:
             if sample < end_of_sequence:
                 pymiere.objects.app.project.activeSequence.markers.createMarker(sample)
-    elif(is_afterfx_running):
-        for i in range(len(beatsamples)):
-            aeApp.jsAddMarker(beatsamples[i], str(i))
+    elif(is_afterfx_running()[0]):
+        aeApp.jsAddMarkers(beatsamples.tolist())
     info.set("Done!")
 
 def select_file():
@@ -423,7 +422,7 @@ class AE_JSWrapper(object):
 
         # Get the path to the return file. Create it if it doesn't exist.
         if not len(returnFolder):
-            returnFolder = os.path.join(basedir, "temp", "AePyJsx")
+            returnFolder = os.path.join(basedir, "temp")
         self.returnFile = os.path.join(returnFolder, "ae_temp_ret.txt")
         if not os.path.exists(returnFolder):
             os.mkdir(returnFolder)
@@ -452,20 +451,10 @@ class AE_JSWrapper(object):
         self.commands = []
 
     def jsExecuteCommand(self):
-        """Pass the commands to the subprocess module."""
-        self.compileCommands()        
         target = [self.aeApp, "-ro", self.tempJsxFile]
+        print(target)
         ret = subprocess.Popen(target)
     
-    def addCommand(self, command):
-        """add a command to the commands list"""
-        self.commands.append(command)
-
-    def compileCommands(self):
-        with open(self.tempJsxFile, "wb") as f:
-            for command in self.commands:
-                f.write(command)
-
     def jsWriteDataOut(self, returnRequest):
         """ An example of getting a return value"""
         com = (
@@ -530,19 +519,31 @@ class AE_JSInterface(object):
 
         return not loading
     
-    def jsAddMarker(self, time, comment = ""):
-        self.aeCom.jsNewCommandGroup()
+    def jsAddMarkers(self, list):
+        json_list = json.dumps(list)
+        jsxTodo = f"""
 
-        jsxTodo = "var Marker = new MarkerValue("+ comment +");"
-        jsxTodo += "var viewer = app.activeViewer;"
-        jsxTodo += "if (viewer.type == ViewerType.VIEWER_COMPOSITION) {"
-        jsxTodo += "    viewer.setActive();"
-        jsxTodo += "    comp = app.project.activeItem;"
-        jsxTodo += "    app.project.activeItem.markerProperty.setValueAtTime("+ str(time) +", Marker);"
-        jsxTodo += "}"
-        
-        self.aeCom.addCommand(jsxTodo)
+        var item = app.project.activeItem;
+
+        if (app.project.activeItem instanceof CompItem) {{
+
+            var comp = app.project.activeItem;
+        }} else if (app.project.item(1) instanceof CompItem) {{
+            var comp = app.project.item(1);
+        }}
+
+        for (var i = 0; i < {list}.length;  i++) {{
+            var compMarker = new MarkerValue(String(i));
+            comp.markerProperty.setValueAtTime({list}[i], compMarker);
+        }}             
+
+        """
+        with open(self.aeCom.tempJsxFile, 'w') as f:
+            f.write(jsxTodo)
+            f.close()
+
         self.aeCom.jsExecuteCommand()
+        time.sleep(0.1)
 ###########################################
 ###########################################
 

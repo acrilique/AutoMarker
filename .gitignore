@@ -1,5 +1,6 @@
 build/
 dist/
+temp/
 audio.mp3
 audio.wav
 .venv/
