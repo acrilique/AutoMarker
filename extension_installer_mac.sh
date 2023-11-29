@@ -1,20 +1,19 @@
 #!/usr/bin/env bash
-# Auto install PymiereLink extension to Premiere on mac
+# Auto install AutoMarker extension to Premiere on mac
 
-# Get temp path
-tempdir=$(mktemp -d)
+# Get script directory
+scriptdir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
-# Download zxp (extension) file
-echo "Download .zxp file"
-url="https://raw.githubusercontent.com/qmasingarbe/pymiere/master/pymiere_link.zxp"
-fname_zxp=$(basename "$url")
-path_zxp="$tempdir/$fname_zxp"
-curl "$url" --output "$path_zxp"
+# Use local zxp (extension) file
+echo "Using local .zxp file"
+fname_zxp="AutoMarker.zxp"
+path_zxp="$scriptdir/$fname_zxp"
 
 # Download ExManCmd (extension manager)
 echo "Download ExManCmd"
 url="https://download.macromedia.com/pub/extensionmanager/ExManCmd_mac.dmg"
 fname_exman=$(basename "$url")
+tempdir=$(mktemp -d)
 path_exman="$tempdir/$fname_exman"
 curl "$url" --output "$path_exman"
 

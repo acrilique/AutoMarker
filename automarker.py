@@ -1,26 +1,19 @@
 # AutoMarker by acrilique.
-################################
-# Licensed under GNU GPL v3.0 #
-################################
-
 import tkinter as tk
 from tkinter import filedialog
 from tkinter import ttk
 from threading import Thread
 import librosa
 import pyaudio
-import pymiere
+import requests
 import os
 import numpy
 import sys
 import re
 import json
 import subprocess
-from distutils.version import StrictVersion
 import platform
 import time
-import winreg as _winreg
-import ctypes
 
 sample_rate = 44100
 ###############################
@@ -30,7 +23,7 @@ sample_rate = 44100
 
 if platform.system().lower() == "windows":
     WINDOWS_SYSTEM = True
-    import winreg as wr  # python 3
+    import winreg as _winreg  # python 3
 else:
     # if not windows, assume it is a macOS
     WINDOWS_SYSTEM = False
@@ -77,9 +70,11 @@ CEPPANEL_PROCESS_NAME = "CEPHtmlEngine.exe" if WINDOWS_SYSTEM else "CEPHtmlEngin
 
 def update_runvar():
 
-    global aeApp
+    global aeApp, prApp
     if(is_premiere_running()[0]):
-        runvar.set("Premiere is running!")
+        if (prApp==None):
+            prApp = PR_JSInterface(returnFolder = os.path.join(basedir, "temp"))
+        runvar.set("Premiere Pro is running!")
     elif(is_afterfx_running()[0]):
         if (aeApp==None):
             aeApp = AE_JSInterface(returnFolder = os.path.join(basedir, "temp"))
@@ -108,11 +103,7 @@ def place_marks():
     root.update()
 
     if(is_premiere_running()[0]): 
-        end_of_sequence = pymiere.objects.app.project.activeSequence.end
-        # Create markers using pymiere
-        for sample in beatsamples:
-            if sample < end_of_sequence:
-                pymiere.objects.app.project.activeSequence.markers.createMarker(sample)
+        prApp.jsAddMarkers(beatsamples.tolist())
     elif(is_afterfx_running()[0]):
         aeApp.jsAddMarkers(beatsamples.tolist())
     info.set("Done!")
@@ -299,110 +290,88 @@ def _get_pids_from_name(process_name):
         lines = output.strip().splitlines()
         return list(map(int, lines))
 
-def get_last_premiere_exe():
-    """
-    Get the executable path on disk of the last installed Premiere Pro version
+# def get_last_premiere_exe():
+#     """
+#     Get the executable path on disk of the last installed Premiere Pro version
 
-    :return: (str) path to executable
-    """
-    get_last_premiere_exe_func = _get_last_premiere_exe_windows if WINDOWS_SYSTEM else _get_last_premiere_exe_mac
-    return get_last_premiere_exe_func()
-# ----- platform specific functions -----
-def _get_last_premiere_exe_windows():
-    """
-    WINDOWS ONLY
-    Get the executable path on disk of the last installed Premiere Pro version using windows registry
+#     :return: (str) path to executable
+#     """
+#     get_last_premiere_exe_func = _get_last_premiere_exe_windows if WINDOWS_SYSTEM else _get_last_premiere_exe_mac
+#     return get_last_premiere_exe_func()
+# # ----- platform specific functions -----
+# def _get_last_premiere_exe_windows():
+#     """
+#     WINDOWS ONLY
+#     Get the executable path on disk of the last installed Premiere Pro version using windows registry
 
-    :return: (str) path to executable
-    """
-    premiere_versions = _get_installed_softwares_info("adobe premiere pro")
-    if not premiere_versions:
-        raise OSError("Could not find an Adobe Premiere Pro version installed on this computer")
-    # find last installed version
-    last_version_num = sorted([StrictVersion(v["DisplayVersion"]) for v in premiere_versions])[-1]
-    last_version_info = [v for v in premiere_versions if v["DisplayVersion"] == str(last_version_num)][0]
-    # search actual exe path
-    base_path = last_version_info["InstallLocation"]
-    build_year = last_version_info["DisplayName"].split(" ")[-1]
-    wrong_paths = list()
-    for folder_name in ["Adobe Premiere Pro CC {}", "Adobe Premiere Pro {}", ""]:  # different versions formatting
-        exe_path = os.path.join(base_path, folder_name.format(build_year), "Adobe Premiere Pro.exe")
-        if not os.path.isfile(exe_path):
-            wrong_paths.append(exe_path)
-            continue
-        wrong_paths = list()
-        break
-    if len(wrong_paths) != 0:
-        raise IOError("Could not find Premiere executable in '{}'".format(wrong_paths))
-    return exe_path
+#     :return: (str) path to executable
+#     """
+#     premiere_versions = _get_installed_softwares_info("adobe premiere pro")
+#     if not premiere_versions:
+#         raise OSError("Could not find an Adobe Premiere Pro version installed on this computer")
+#     # find last installed version
+#     last_version_num = sorted([StrictVersion(v["DisplayVersion"]) for v in premiere_versions])[-1]
+#     last_version_info = [v for v in premiere_versions if v["DisplayVersion"] == str(last_version_num)][0]
+#     # search actual exe path
+#     base_path = last_version_info["InstallLocation"]
+#     build_year = last_version_info["DisplayName"].split(" ")[-1]
+#     wrong_paths = list()
+#     for folder_name in ["Adobe Premiere Pro CC {}", "Adobe Premiere Pro {}", ""]:  # different versions formatting
+#         exe_path = os.path.join(base_path, folder_name.format(build_year), "Adobe Premiere Pro.exe")
+#         if not os.path.isfile(exe_path):
+#             wrong_paths.append(exe_path)
+#             continue
+#         wrong_paths = list()
+#         break
+#     if len(wrong_paths) != 0:
+#         raise IOError("Could not find Premiere executable in '{}'".format(wrong_paths))
+#     return exe_path
 
-def _get_last_premiere_exe_mac():
-    """
-    MACOS ONLY
-    Get the executable path on disk of the last installed Premiere Pro version using macOS System Profiler
+# def _get_last_premiere_exe_mac():
+#     """
+#     MACOS ONLY
+#     Get the executable path on disk of the last installed Premiere Pro version using macOS System Profiler
 
-    :return: (str) path to executable
-    """
-    # list all installed app to a json datastructure
-    output = subprocess.check_output(["system_profiler", "-json", "SPApplicationsDataType"])
-    apps_data = json.loads(output)["SPApplicationsDataType"]
-    # filter Premiere pro installed versions
-    premiere_apps = [data for data in apps_data if "adobe premiere pro" in data["_name"].lower()]
-    if not premiere_apps:
-        raise OSError("Could not find an Adobe Premiere Pro version installed on this computer")
-    # get last app version path
-    premiere_apps.sort(key=lambda d: d["version"], reverse=True)
-    return premiere_apps[0]["path"]
+#     :return: (str) path to executable
+#     """
+#     # list all installed app to a json datastructure
+#     output = subprocess.check_output(["system_profiler", "-json", "SPApplicationsDataType"])
+#     apps_data = json.loads(output)["SPApplicationsDataType"]
+#     # filter Premiere pro installed versions
+#     premiere_apps = [data for data in apps_data if "adobe premiere pro" in data["_name"].lower()]
+#     if not premiere_apps:
+#         raise OSError("Could not find an Adobe Premiere Pro version installed on this computer")
+#     # get last app version path
+#     premiere_apps.sort(key=lambda d: d["version"], reverse=True)
+#     return premiere_apps[0]["path"]
 
-def _get_installed_softwares_info(name_filter, names=["DisplayVersion", "InstallLocation"]):
-    """
-    WINDOWS ONLY
-    Looking into Uninstall key in Windows registry, we can get some infos about installed software
+# def _get_installed_softwares_info(name_filter, names=["DisplayVersion", "InstallLocation"]):
+#     """
+#     WINDOWS ONLY
+#     Looking into Uninstall key in Windows registry, we can get some infos about installed software
 
-    :param name_filter: (str) filter software containing this name
-    :return: (list of dict) info of software found
-    """
-    reg = wr.ConnectRegistry(None, wr.HKEY_LOCAL_MACHINE)
-    key = wr.OpenKey(reg, r"SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall")
-    apps_info = list()
-    # list all installed apps
-    for i in range(wr.QueryInfoKey(key)[0]):
-        subkey_name = wr.EnumKey(key,i)
-        subkey = wr.OpenKey(key, subkey_name)
-        try:
-            soft_name = wr.QueryValueEx(subkey, "DisplayName")[0]
-        except EnvironmentError:
-            continue
-        if name_filter.lower() not in soft_name.lower():
-            continue
-        apps_info.append(dict({n: wr.QueryValueEx(subkey, n)[0] for n in names}, DisplayName=soft_name))
-    return apps_info
+#     :param name_filter: (str) filter software containing this name
+#     :return: (list of dict) info of software found
+#     """
+#     reg = wr.ConnectRegistry(None, wr.HKEY_LOCAL_MACHINE)
+#     key = wr.OpenKey(reg, r"SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall")
+#     apps_info = list()
+#     # list all installed apps
+#     for i in range(wr.QueryInfoKey(key)[0]):
+#         subkey_name = wr.EnumKey(key,i)
+#         subkey = wr.OpenKey(key, subkey_name)
+#         try:
+#             soft_name = wr.QueryValueEx(subkey, "DisplayName")[0]
+#         except EnvironmentError:
+#             continue
+#         if name_filter.lower() not in soft_name.lower():
+#             continue
+#         apps_info.append(dict({n: wr.QueryValueEx(subkey, n)[0] for n in names}, DisplayName=soft_name))
+#     return apps_info
 ###########################################
 ###########################################
 ###########################################
-# Tool to get existing windows, usefull here to check if AE is loaded
-class CurrentWindows():
-    def __init__(self):
-        self.EnumWindows = ctypes.windll.user32.EnumWindows
-        self.EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int))
-        self.GetWindowText = ctypes.windll.user32.GetWindowTextW
-        self.GetWindowTextLength = ctypes.windll.user32.GetWindowTextLengthW
-        self.IsWindowVisible = ctypes.windll.user32.IsWindowVisible
-
-        self.titles = []
-        self.EnumWindows(self.EnumWindowsProc(self.foreach_window), 0)
-
-    def foreach_window(self, hwnd, lParam):
-        if self.IsWindowVisible(hwnd):
-            length = self.GetWindowTextLength(hwnd)
-            buff = ctypes.create_unicode_buffer(length + 1)
-            self.GetWindowText(hwnd, buff, length + 1)
-            self.titles.append(buff.value)
-        return True
-
-    def getTitles(self):
-        return self.titles
-
+# AE interface
 class AE_JSWrapper(object):
     def __init__(self, aeVersion = "", returnFolder = ""):
         self.aeVersion = aeVersion
@@ -494,7 +463,6 @@ class AE_JSWrapper(object):
         for item in content:
             res.append(str(item.rstrip()))
         return res
-
 # An interface to actually call those commands. 
 class AE_JSInterface(object):
     
@@ -505,22 +473,7 @@ class AE_JSInterface(object):
     def openAE(self):
         self.aeCom.openAE()
 
-    def waitingAELoading(self):
-        loading = True
-        attempts = 0
-        while loading and attempts < 60:
-            for t in CurrentWindows().getTitles():
-                if self.aeWindowName.lower() in t.lower():
-                    loading = False
-                    break
-
-            attempts += 1
-            time.sleep(0.5)
-
-        return not loading
-    
     def jsAddMarkers(self, list):
-        json_list = json.dumps(list)
         jsxTodo = f"""
 
         var item = app.project.activeItem;
@@ -545,6 +498,37 @@ class AE_JSInterface(object):
         self.aeCom.jsExecuteCommand()
         time.sleep(0.1)
 ###########################################
+# Premiere interface
+class PR_JSWrapper(object):
+    def __init__(self, prVersion = "", returnFolder = ""):
+        self.jsxTodo = ""
+    
+    def jsExecuteCommand(self):
+        json_data = json.dumps({"to_eval": self.jsxTodo})
+        response = requests.post("http://127.0.0.1:3000", data=json_data)
+        print(response.text)
+
+# Actual interface
+class PR_JSInterface(object):
+
+    def __init__(self, prVersion = "", returnFolder = ""):
+
+        self.prCom = PR_JSWrapper(prVersion, returnFolder) # Create wrapper to handle JSX
+
+    def jsAddMarkers(self, list):
+        self.prCom.jsxTodo = f"""
+
+        for (var i = 0; i < {list}.length;  i++) {{
+            $.writeln("list[i]: " + {list}[i]);
+            $.writeln("end: " + app.project.activeSequence.end);
+            if ({list}[i] < app.project.activeSequence.end)
+            app.project.activeSequence.markers.createMarker({list}[i]);
+        }}             
+
+        """
+        self.prCom.jsExecuteCommand()
+        time.sleep(0.1)
+###########################################
 ###########################################
 
 newWindow = None
@@ -554,6 +538,9 @@ stream = None
 
 if (is_afterfx_running()): aeApp = AE_JSInterface(returnFolder = os.path.join(basedir, "temp"))
 else: aeApp = None
+
+if (is_premiere_running()): prApp = PR_JSInterface(returnFolder = os.path.join(basedir, "temp"))
+else: prApp = None
 
 root = tk.Tk()
 root.title("AutoMarker")

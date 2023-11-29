@@ -8,7 +8,7 @@ a = Analysis(
     ['automarker.py'],
     pathex=[],
     binaries=[],
-    datas=[('icon.ico', '.'), ('extension_installer_mac.sh', '.'), ('extension_installer_win.bat', '.'), ('README.md', '.'), ('flag.txt', '.')],
+    datas=[('icon.ico', '.'), ('extension_installer_mac.sh', '.'), ('extension_installer_win.bat', '.'), ('README.md', '.'), ('flag.txt', '.'), ('AutoMarker.zxp', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
