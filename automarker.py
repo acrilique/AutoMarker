@@ -14,6 +14,7 @@ import json
 import subprocess
 import platform
 import time
+import tempfile
 
 sample_rate = 44100
 ###############################
@@ -24,9 +25,20 @@ sample_rate = 44100
 if platform.system().lower() == "windows":
     WINDOWS_SYSTEM = True
     import winreg as _winreg  # python 3
+    RESOLVE_SCRIPT_API = "%PROGRAMDATA%\\Blackmagic Design\\DaVinci Resolve\\Support\\Developer\\Scripting"
+    RESOLVE_SCRIPT_LIB = "C:\\Program Files\\Blackmagic Design\\DaVinci Resolve\\fusionscript.dll"
+    PYTHONPATH = "%PYTHONPATH%;%RESOLVE_SCRIPT_API%\\Modules\\"
 else:
     # if not windows, assume it is a macOS
     WINDOWS_SYSTEM = False
+    RESOLVE_SCRIPT_API = "/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting"
+    RESOLVE_SCRIPT_LIB = "/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion/fusionscript.so"
+    PYTHONPATH = "$PYTHONPATH:$RESOLVE_SCRIPT_API/Modules/"
+
+# Set the environment variables
+os.environ["RESOLVE_SCRIPT_API"] = RESOLVE_SCRIPT_API
+os.environ["RESOLVE_SCRIPT_LIB"] = RESOLVE_SCRIPT_LIB
+os.environ["PYTHONPATH"] = PYTHONPATH
 
 if getattr(sys, 'frozen', False):
    basedir = sys._MEIPASS
@@ -42,7 +54,8 @@ except ImportError:
     pass
 
 try:
-    with open(os.path.join(basedir, 'flag.txt'), 'r') as flag_file:
+    flag_path = os.path.join(os.path.expanduser("~"), 'AutoMarker', 'flag.txt')
+    with open(flag_path, 'r') as flag_file:
         flag_content = flag_file.read().strip()
 except FileNotFoundError:
     # If the file is not found, treat it as not installed
@@ -54,13 +67,16 @@ if flag_content == "not_installed":
         subprocess.run([os.path.join(basedir, 'extension_installer_win.bat')])
     else:
         subprocess.run([os.path.join(basedir, 'extension_installer_mac.sh')])
+    os.makedirs(os.path.dirname(flag_path), exist_ok=True)
     # Update the flag.txt file to indicate that the script has been executed, erasing old text
-    with open('flag.txt', 'w') as flag_file:
+    with open(flag_path, 'w') as flag_file:
         flag_file.write("installed")
+        flag_file.close()
 
 CREATE_NO_WINDOW = 0x08000000
 PREMIERE_PROCESS_NAME = "adobe premiere pro.exe" if WINDOWS_SYSTEM else "Adobe Premiere Pro"
 AFTERFX_PROCESS_NAME = "AfterFX.exe" if WINDOWS_SYSTEM else "Adobe After Effects"
+RESOLVE_PROCESS_NAME = "Resolve.exe" if WINDOWS_SYSTEM else "Resolve"
 CEPPANEL_PROCESS_NAME = "CEPHtmlEngine.exe" if WINDOWS_SYSTEM else "CEPHtmlEngine"
 
 ###############################
@@ -79,12 +95,14 @@ def update_runvar():
         if (aeApp==None):
             aeApp = AE_JSInterface(returnFolder = os.path.join(basedir, "temp"))
         runvar.set("After Effects is running!")
+    elif(is_resolve_running()[0]):
+        runvar.set("Resolve is running!")
     else:
         runvar.set("App isn't running...")
     root.after(1000, update_runvar)
 
 def auto_beat_marker():
-    if (is_premiere_running()[0] or is_afterfx_running()[0]):
+    if (is_premiere_running()[0] or is_afterfx_running()[0] or is_resolve_running()[0]):
         thread = Thread(target=place_marks)
         thread.daemon = True
         thread.start()
@@ -105,10 +123,14 @@ def place_marks():
         prApp.jsAddMarkers(beatsamplestoplace.tolist())
     elif(is_afterfx_running()[0]):
         aeApp.jsAddMarkers(beatsamplestoplace.tolist())
+    elif(is_resolve_running()[0]):
+        for beat in beatsamplestoplace:
+            resApp = Resolve_Interface()
+            resApp.addMarkerToCurrentTimeline(second=beat)
     info.set("Done!")
 
 def clear_all_markers():
-    if (is_premiere_running()[0] or is_afterfx_running()[0]):
+    if (is_premiere_running()[0] or is_afterfx_running()[0] or is_resolve_running()[0]):
         thread = Thread(target=remove_marks)
         thread.daemon = True
         thread.start()
@@ -120,6 +142,9 @@ def remove_marks():
         prApp.jsClearAllMarkers()
     elif(is_afterfx_running()[0]):
         aeApp.jsClearAllMarkers()
+    elif(is_resolve_running()[0]):
+        resApp = Resolve_Interface()
+        resApp.clearAllMarkers()
     info.set("Done!")
 
 def select_file():
@@ -247,6 +272,10 @@ def is_premiere_running():
 def is_afterfx_running():
 
     return exe_is_running(AFTERFX_PROCESS_NAME)
+
+def is_resolve_running():
+
+    return exe_is_running(RESOLVE_PROCESS_NAME)
 
 def start_premiere(use_bat=False):
     raise SystemError("Could not guaranty premiere started")
@@ -412,7 +441,7 @@ class AE_JSWrapper(object):
 
         # Get the path to the return file. Create it if it doesn't exist.
         if not len(returnFolder):
-            returnFolder = "C:\\Temp"
+            returnFolder = os.path.join(tempfile.gettempdir(), "AutoMarker")
         self.returnFile = os.path.join(returnFolder, "ae_temp_ret.txt")
         if not os.path.exists(returnFolder):
             os.mkdir(returnFolder)
@@ -442,7 +471,6 @@ class AE_JSWrapper(object):
 
     def jsExecuteCommand(self):
         target = [self.aeApp, "-ro", self.tempJsxFile]
-        print(target)
         ret = subprocess.Popen(target)
     
     def jsWriteDataOut(self, returnRequest):
@@ -541,6 +569,7 @@ class AE_JSInterface(object):
         self.aeCom.jsExecuteCommand()
         time.sleep(0.1)
 ###########################################
+###########################################
 # Premiere interface
 class PR_JSWrapper(object):
     def __init__(self, prVersion = "", returnFolder = ""):
@@ -586,6 +615,91 @@ class PR_JSInterface(object):
         """
         self.prCom.jsExecuteCommand()
         time.sleep(0.1)
+###########################################
+###########################################
+# Resolve interface
+class Resolve_Interface(object):
+
+    def __init__(self):
+        self.resolve = Resolve_Interface.GetResolve()
+
+    def GetResolve():
+        try:
+        # The PYTHONPATH needs to be set correctly for this import statement to work.
+        # An alternative is to import the DaVinciResolveScript by specifying absolute path (see ExceptionHandler logic)
+            import DaVinciResolveScript as bmd
+        except ImportError:
+            if sys.platform.startswith("darwin"):
+                expectedPath="/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting/Modules/"
+            elif sys.platform.startswith("win") or sys.platform.startswith("cygwin"):
+                import os
+                expectedPath=os.getenv('PROGRAMDATA') + "\\Blackmagic Design\\DaVinci Resolve\\Support\\Developer\\Scripting\\Modules\\"
+            elif sys.platform.startswith("linux"):
+                expectedPath="/opt/resolve/libs/Fusion/Modules/"
+
+            # check if the default path has it...
+            print("Unable to find module DaVinciResolveScript from $PYTHONPATH - trying default locations")
+            try:
+                import imp
+                bmd = imp.load_source('DaVinciResolveScript', expectedPath+"DaVinciResolveScript.py")
+            except ImportError:
+                # No fallbacks ... report error:
+                print("Unable to find module DaVinciResolveScript - please ensure that the module DaVinciResolveScript is discoverable by python")
+                print("For a default DaVinci Resolve installation, the module is expected to be located in: "+expectedPath)
+                sys.exit()
+
+        return bmd.scriptapp("Resolve")
+    
+    def addMarkerToCurrentTimeline(self, second, color = "Blue"):
+        resolve = self.resolve
+        if not resolve:
+            print("Error: Failed to get resolve object!")
+            return
+
+        # Get supporting objects
+        projectManager = resolve.GetProjectManager()
+        project = projectManager.GetCurrentProject()
+        timeline = project.GetCurrentTimeline()  # current timeline
+
+        if not timeline:
+            print("Error: No current timeline exist, add a timeline (recommended duration >= 80 frames) and try again!")
+            return
+
+        # Open Edit page
+        resolve.OpenPage("edit")
+
+        # Get timeline frames
+        startFrame = int(timeline.GetStartFrame())
+        endFrame = int(timeline.GetEndFrame())
+        numFrames = endFrame - startFrame
+        framerate = timeline.GetSetting("timelineFrameRate")
+
+        # Add Markers
+        frame = int(second * framerate)
+        if numFrames >= 1:
+            try: timeline.DeleteMarkerAtFrame(frame)
+            except: pass
+            isSuccess = timeline.AddMarker(frame, "Blue", "AutoMarker", "beat-related", 1)
+    
+    def clearAllMarkers(self):
+        resolve = self.resolve
+        if not resolve:
+            print("Error: Failed to get resolve object!")
+            return
+
+        # Get supporting objects
+        projectManager = resolve.GetProjectManager()
+        project = projectManager.GetCurrentProject()
+        timeline = project.GetCurrentTimeline()  # current timeline
+
+        if not timeline:
+            print("Error: No current timeline exist, add a timeline (recommended duration >= 80 frames) and try again!")
+            return
+
+        # Open Edit page
+        resolve.OpenPage("edit")
+        timeline.DeleteMarkersByColor("Blue")
+
 ###########################################
 ###########################################
 
@@ -640,7 +754,7 @@ pathLabel = tk.Label(mainframe, textvariable=path)
 infoLabel = tk.Label(mainframe, textvariable=info)
 readmeButton = ttk.Button(mainframe, text="Readme", command=lambda: os.startfile(os.path.join(basedir, 'README.md')))
 selectFileButton = ttk.Button(mainframe, text="Select audio file", command=select_file, width=40)
-createMarkersButton = ttk.Button(mainframe, text="Create markers", command=auto_beat_marker, width=40)
+createMarkersButton = ttk.Button(mainframe, text="Create markers", command=auto_beat_marker, width=40)# , command=auto_beat_marker
 removeMarkersButton = ttk.Button(mainframe, text="Remove markers", command=clear_all_markers, width=40)                                                                                                                                                                 
 everyLabel = tk.Label(mainframe, text="Place markers every x beats")
 everyScale = ttk.LabeledScale(mainframe, variable=everyvar, from_=1, to=16, compound='bottom')

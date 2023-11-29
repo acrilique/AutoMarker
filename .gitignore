@@ -4,3 +4,4 @@ temp/
 audio.mp3
 audio.wav
 .venv/
+__pycache__/
