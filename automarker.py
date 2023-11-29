@@ -91,21 +91,35 @@ def auto_beat_marker():
 
 def place_marks():
     global data
-    global beatsamples
 
     every = everyvar.get()
     offset = offsetvar.get()
     if (every > 1):
         # Add only every x beats
-        beatsamples = beatsamples[offset::every]
+        beatsamplestoplace = beatsamples[offset::every]
     
     info.set("Placing markers...")
     root.update()
 
     if(is_premiere_running()[0]): 
-        prApp.jsAddMarkers(beatsamples.tolist())
+        prApp.jsAddMarkers(beatsamplestoplace.tolist())
     elif(is_afterfx_running()[0]):
-        aeApp.jsAddMarkers(beatsamples.tolist())
+        aeApp.jsAddMarkers(beatsamplestoplace.tolist())
+    info.set("Done!")
+
+def clear_all_markers():
+    if (is_premiere_running()[0] or is_afterfx_running()[0]):
+        thread = Thread(target=remove_marks)
+        thread.daemon = True
+        thread.start()
+
+def remove_marks():
+    info.set("Removing markers...")
+    root.update()
+    if(is_premiere_running()[0]): 
+        prApp.jsClearAllMarkers()
+    elif(is_afterfx_running()[0]):
+        aeApp.jsClearAllMarkers()
     info.set("Done!")
 
 def select_file():
@@ -248,11 +262,13 @@ def exe_is_running(exe_name):
     :return: (bool) process is running, (int) pid
     """
     pids = _get_pids_from_name(exe_name)
-    if len(pids) == 0:
-        return False, None
-    if len(pids) > 1:
+    if len(pids) == 1:
+        return True, pids[0]
+    if len(pids) > 1 and exe_name != AFTERFX_PROCESS_NAME:
         raise OSError("More than one process matching name '{}' were found running (pid: {})".format(exe_name, pids))
-    return True, pids[0]
+    if len(pids) > 1 and exe_name == AFTERFX_PROCESS_NAME:
+        return True, pids[0]
+    return False, None
 
 def count_running_exe(exe_name):
     """
@@ -279,6 +295,9 @@ def _get_pids_from_name(process_name):
         # parse output lines
         lines = output.strip().splitlines()
         matching_lines = [l for l in lines if l.lower().startswith(process_name.lower())]
+
+        # print(f"Matching lines for {process_name}: {matching_lines}")
+
         return [int(re.findall("   ([0-9]{1,6}) [a-zA-Z]", l)[0]) for l in matching_lines]
     else:
         # use pgrep UNIX command to filter processes by name
@@ -288,6 +307,8 @@ def _get_pids_from_name(process_name):
             return list()
         # parse output lines
         lines = output.strip().splitlines()
+        # print(f"Lines for {process_name}: {lines}")
+
         return list(map(int, lines))
 
 # def get_last_premiere_exe():
@@ -391,7 +412,7 @@ class AE_JSWrapper(object):
 
         # Get the path to the return file. Create it if it doesn't exist.
         if not len(returnFolder):
-            returnFolder = os.path.join(basedir, "temp")
+            returnFolder = "C:\\Temp"
         self.returnFile = os.path.join(returnFolder, "ae_temp_ret.txt")
         if not os.path.exists(returnFolder):
             os.mkdir(returnFolder)
@@ -497,6 +518,28 @@ class AE_JSInterface(object):
 
         self.aeCom.jsExecuteCommand()
         time.sleep(0.1)
+    
+    def jsClearAllMarkers(self):
+        jsxTodo = f"""
+
+        var item = app.project.activeItem;
+
+        if (app.project.activeItem instanceof CompItem) {{
+            var comp = app.project.activeItem;
+        }} else if (app.project.item(1) instanceof CompItem) {{
+            var comp = app.project.item(1);
+        }}
+        $
+        for (var i = comp.markerProperty.numKeys; i > 0; i = i - 1) {{
+            comp.markerProperty.removeKey(1);
+        }}
+        """
+        with open(self.aeCom.tempJsxFile, 'w') as f:
+            f.write(jsxTodo)
+            f.close()
+
+        self.aeCom.jsExecuteCommand()
+        time.sleep(0.1)
 ###########################################
 # Premiere interface
 class PR_JSWrapper(object):
@@ -506,7 +549,6 @@ class PR_JSWrapper(object):
     def jsExecuteCommand(self):
         json_data = json.dumps({"to_eval": self.jsxTodo})
         response = requests.post("http://127.0.0.1:3000", data=json_data)
-        print(response.text)
 
 # Actual interface
 class PR_JSInterface(object):
@@ -524,6 +566,22 @@ class PR_JSInterface(object):
             if ({list}[i] < app.project.activeSequence.end)
             app.project.activeSequence.markers.createMarker({list}[i]);
         }}             
+
+        """
+
+        self.prCom.jsExecuteCommand()
+        time.sleep(0.1)
+
+    def jsClearAllMarkers(self):
+        self.prCom.jsxTodo = f"""
+
+        var markers = app.project.activeSequence.markers;
+        var current_marker = markers.getFirstMarker();
+        while (markers.numMarkers > 0) {{
+            var to_delete = current_marker;
+            current_marker = markers.getNextMarker(current_marker);
+            markers.deleteMarker(to_delete);
+        }}
 
         """
         self.prCom.jsExecuteCommand()
@@ -583,11 +641,12 @@ infoLabel = tk.Label(mainframe, textvariable=info)
 readmeButton = ttk.Button(mainframe, text="Readme", command=lambda: os.startfile(os.path.join(basedir, 'README.md')))
 selectFileButton = ttk.Button(mainframe, text="Select audio file", command=select_file, width=40)
 createMarkersButton = ttk.Button(mainframe, text="Create markers", command=auto_beat_marker, width=40)
+removeMarkersButton = ttk.Button(mainframe, text="Remove markers", command=clear_all_markers, width=40)                                                                                                                                                                 
 everyLabel = tk.Label(mainframe, text="Place markers every x beats")
 everyScale = ttk.LabeledScale(mainframe, variable=everyvar, from_=1, to=16, compound='bottom')
 offsetLabel = tk.Label(mainframe, text="Offset first beat")
 offsetScale = ttk.LabeledScale(mainframe, variable=offsetvar, from_=0, to=16, compound='bottom')
-versionLabel = tk.Label(mainframe, text="v0.2.0")
+versionLabel = tk.Label(mainframe, text="v0.3.0")
 
 everyScale.update()
 offsetScale.update()
@@ -597,13 +656,14 @@ readmeButton.grid(column=1, row=0, sticky=(tk.E))
 pathLabel.grid(column=1, row=1, sticky=(tk.W, tk.E))
 selectFileButton.grid(column=1, row=2, sticky=(tk.W, tk.E))
 createMarkersButton.grid(column=1, row=3, sticky=(tk.W, tk.E))
-everyLabel.grid(column=1, row=4, sticky=(tk.W))
-everyScale.grid(column=1, row=5, sticky=(tk.W, tk.E))
-offsetLabel.grid(column=1, row=6, sticky=(tk.W))
-offsetScale.grid(column=1, row=7, sticky=(tk.W, tk.E))
-runvarLabel.grid(column=1, row=8, sticky=(tk.W))
-infoLabel.grid(column=1,row=8, sticky=(tk.E))
-versionLabel.grid(column=1, row=9, sticky=(tk.E))
+removeMarkersButton.grid(column=1, row=4, sticky=(tk.W, tk.E))
+everyLabel.grid(column=1, row=5, sticky=(tk.W))
+everyScale.grid(column=1, row=6, sticky=(tk.W, tk.E))
+offsetLabel.grid(column=1, row=7, sticky=(tk.W))
+offsetScale.grid(column=1, row=8, sticky=(tk.W, tk.E))
+runvarLabel.grid(column=1, row=9, sticky=(tk.W))
+infoLabel.grid(column=1,row=9, sticky=(tk.E))
+versionLabel.grid(column=1, row=10, sticky=(tk.E))
 
 
 for child in mainframe.winfo_children(): 
