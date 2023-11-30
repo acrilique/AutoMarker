@@ -1,9 +1,9 @@
 
-## AutoMarker
+# AutoMarker
 
 AutoMarker is a Python-based GUI application that allows users to place markers on a Premiere Pro sequence, an After Effects composition or a Davinci Resolve Studio timeline based on a music file's tempo. This is useful for placing clips faster when you want them to be related to the music that is playing. The application uses the librosa library to detect beats in the audio file.
 
-# Features
+## Features
 
  - Detects beats in an audio file and places markers.
 
@@ -15,11 +15,11 @@ AutoMarker is a Python-based GUI application that allows users to place markers 
 
  - New: preview the first 10 seconds of your markers before placing them, and delete all your placed markers with just one click!
 
-# Installation
+## Installation
 
 AutoMarker is packaged as a standalone executable using PyInstaller. To obtain the latest release, get it for cheap on Gumroad (in the form of .exe or .dmg).
 
-# Usage
+## Usage
 
 If you installed using the packaged app, you can launch it from your system's application menu. The application will open in a new window. The first time you open it after installing it, it will install the necessary Premiere Pro extension called "AutoMarker". 
 
@@ -35,21 +35,21 @@ To use AutoMarker, follow these steps:
 
 It is important to note that having more than 1 of the supported apps active at the same time can cause unexpected behaviour. If Premiere is active, it will be the one being used. If not, After Effects, and then Resolve. I'm thinking about implementing an input for the user to choose which app they want to put the markers to.
 
-# Troubleshooting
+## Troubleshooting
 
 If you encounter any issues while using AutoMarker, ensure that Adobe Premiere Pro is installed and running. If the problem persists, please get in touch and I'll try to check it as soon as I'm free. I'm also open to feature suggestions!
 
-# Contact
+## Contact
 
 For any questions or concerns, please open an issue or contact me personally at lluc.simo5@gmail.com
 
 I get a lot of emails so insist if you see that I dont answer.
 
-## AutoMarker
+# AutoMarker
 
 AutoMarker es una aplicación GUI basada en Python que permite a los usuarios colocar marcadores en una secuencia de Premiere Pro, una composición de After Effects o una línea de tiempo de Davinci Resolve Studio basada en el tempo de un archivo de música. Esto es útil para colocar clips más rápido cuando se desea que estén relacionados con el ritmo de la música que se quiere utilizar. La aplicación hace uso de la biblioteca de código abierto librosa para detectar beats en el archivo de audio.
 
-# Características
+## Características
 
  - Detecta beats en un archivo de audio y coloca marcadores.
 
@@ -61,11 +61,11 @@ AutoMarker es una aplicación GUI basada en Python que permite a los usuarios co
 
  - Nuevo: obtén una vista previa de los primeros 10 segundos de sus marcadores antes de colocarlos y elimina todos los marcadores colocados con solo un clic.
 
-# Instalación
+## Instalación
 
 AutoMarker está empaquetado como un ejecutable independiente mediante PyInstaller. Para obtener la última versión, consíguela por por lo que cuesta un café en Gumroad (en forma de .exe o .dmg).
 
-# Uso
+## Uso
 
 Si la instalaste utilizando la aplicación empaquetada, puedes iniciarla desde el menú de aplicaciones de su sistema. La aplicación se abrirá en una nueva ventana. La primera vez que la ejecutes después de instalarla, se realizará la instalación de la extensión de Premiere Pro "AutoMarker", la cuál permite a AutoMarker ejecutar comandos en Premiere.
 
@@ -81,11 +81,11 @@ Para utilizar AutoMarker, sigue estos pasos:
 
 Es importante tener en cuenta que tener activas más de una de las aplicaciones compatibles al mismo tiempo puede provocar un comportamiento inesperado. Si Premiere está activo, será el que se utilice. Si no, After Effects y luego Resolve. Estoy pensando en implementar un input para que el usuario elija en qué app quiere poner los marcadores.
 
-# Solución de problemas
+## Solución de problemas
 
 Si encuentras algún problema al utilizar AutoMarker, asegúrate de que la aplicación en la que quieres poner los marcadores esté instalada y ejecutándose. Si el problema persiste, ponte en contacto conmigo e intentaré comprobarlo en cuanto esté libre. ¡También estoy abierto a sugerencias de funciones!
 
-# Contacto
+## Contacto
 
 Si tienes alguna pregunta o inquietud, contáctame personalmente en lluc.simo5@gmail.com.
 
