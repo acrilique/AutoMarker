@@ -695,7 +695,7 @@ everyLabel = tk.Label(mainframe, text="Place markers every x beats")
 everyScale = ttk.LabeledScale(mainframe, variable=everyvar, from_=1, to=16, compound='bottom')
 offsetLabel = tk.Label(mainframe, text="Offset first beat")
 offsetScale = ttk.LabeledScale(mainframe, variable=offsetvar, from_=0, to=16, compound='bottom')
-versionLabel = tk.Label(mainframe, text="v0.3.0")
+versionLabel = tk.Label(mainframe, text="v0.3.3")
 
 everyScale.update()
 offsetScale.update()
