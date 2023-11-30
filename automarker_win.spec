@@ -3,12 +3,20 @@
 
 block_cipher = None
 
+added_files = [
+         ('icon.ico', '.'),
+         ('extension_installer_mac.sh', '.'),
+         ('extension_installer_win.bat', '.'),
+         ('README.md', '.'),
+         ('AutoMarker.zxp', '.'),
+         ('DaVinciResolveScript.py', '.')
+         ]
 
 a = Analysis(
     ['automarker.py'],
     pathex=[],
     binaries=[],
-    datas=[('icon.ico', '.'), ('extension_installer_mac.sh', '.'), ('extension_installer_win.bat', '.'), ('README.md', '.'), ('AutoMarker.zxp', '.'), ('DaVinciResolveScript.py', '.')],
+    datas=added_files,
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
