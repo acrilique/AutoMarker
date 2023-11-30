@@ -89,11 +89,11 @@ def update_runvar():
     global aeApp, prApp
     if(is_premiere_running()[0]):
         if (prApp==None):
-            prApp = PR_JSInterface(returnFolder = os.path.join(basedir, "temp"))
+            prApp = PR_JSInterface(returnFolder = os.path.join(tempfile.gettempdir(), "AutoMarker"))
         runvar.set("Premiere Pro is running!")
     elif(is_afterfx_running()[0]):
         if (aeApp==None):
-            aeApp = AE_JSInterface(returnFolder = os.path.join(basedir, "temp"))
+            aeApp = AE_JSInterface(returnFolder = os.path.join(tempfile.gettempdir(), "AutoMarker"))
         runvar.set("After Effects is running!")
     elif(is_resolve_running()[0]):
         runvar.set("Resolve is running!")
@@ -708,10 +708,10 @@ playpos = 0
 p = pyaudio.PyAudio()
 stream = None
 
-if (is_afterfx_running()): aeApp = AE_JSInterface(returnFolder = os.path.join(basedir, "temp"))
+if (is_afterfx_running()): aeApp = AE_JSInterface(returnFolder = os.path.join(tempfile.gettempdir(), "AutoMarker"))
 else: aeApp = None
 
-if (is_premiere_running()): prApp = PR_JSInterface(returnFolder = os.path.join(basedir, "temp"))
+if (is_premiere_running()): prApp = PR_JSInterface(returnFolder = os.path.join(tempfile.gettempdir(), "AutoMarker"))
 else: prApp = None
 
 root = tk.Tk()
