@@ -16,7 +16,6 @@ import platform
 import time
 import tempfile
 
-sample_rate = 44100
 ###############################
 ###############################
 ###############################
@@ -147,19 +146,8 @@ def remove_marks():
         resApp.clearAllMarkers()
     info.set("Done!")
 
-def select_file():
-    global data
-    global beatsamples
-    global newWindow
-
-    file_path = filedialog.askopenfilename(
-        initialdir=os.path.expanduser("~"),
-        title='Select an audio file',
-        filetypes=[('Audio files', ['*.wav', '*.mp3', '*.flac', '*.ogg', '*.aiff']), ('All files', '.*')]
-    )
-
-    path.set(file_path) 
-
+def obtain_data_from_file():
+    global data, beatsamples
     info.set("Reading file from source...")
     root.update()
     
@@ -175,6 +163,8 @@ def select_file():
 
     data = numpy.asfortranarray(data)
 
+def child_window_setup():
+    global newWindow
     newWindow = tk.Toplevel(root)
     newWindow.title("Marker placement")
     newWindow.geometry("1000x380")
@@ -184,8 +174,8 @@ def select_file():
     playButton = ttk.Button(newWindow, text="Play", command=play_preview)
 
     # Draw the waveform 
-    stepsize = int(len(data[:samplerate * 10]) / 1000)
-    buffer = [int(x * 130 + 210) for x in data[:samplerate * 10:stepsize]]
+    stepsize = int(len(data[:sample_rate * 10]) / 1000)
+    buffer = [int(x * 130 + 210) for x in data[:sample_rate * 10:stepsize]]
     for i in range(len(buffer)-1):
         canvas.create_line(i, buffer[i], i + 1, buffer[i+1], fill="black")
 
@@ -199,6 +189,28 @@ def select_file():
     canvas.pack()
     updateButton.pack()
     playButton.pack()
+
+def retreive_and_preview():
+
+    obtain_data_from_file()
+    child_window_setup()
+
+def select_file():
+    global data
+    global beatsamples
+    global newWindow
+
+    file_path = filedialog.askopenfilename(
+        initialdir=os.path.expanduser("~"),
+        title='Select an audio file',
+        filetypes=[('Audio files', ['*.wav', '*.mp3', '*.flac', '*.ogg', '*.aiff']), ('All files', '.*')]
+    )
+
+    path.set(file_path) 
+
+    thread = Thread(target=retreive_and_preview)
+    thread.daemon = True
+    thread.start()
 
 def callback(in_data, frame_count, time_info, status):
     global playpos
@@ -340,84 +352,6 @@ def _get_pids_from_name(process_name):
 
         return list(map(int, lines))
 
-# def get_last_premiere_exe():
-#     """
-#     Get the executable path on disk of the last installed Premiere Pro version
-
-#     :return: (str) path to executable
-#     """
-#     get_last_premiere_exe_func = _get_last_premiere_exe_windows if WINDOWS_SYSTEM else _get_last_premiere_exe_mac
-#     return get_last_premiere_exe_func()
-# # ----- platform specific functions -----
-# def _get_last_premiere_exe_windows():
-#     """
-#     WINDOWS ONLY
-#     Get the executable path on disk of the last installed Premiere Pro version using windows registry
-
-#     :return: (str) path to executable
-#     """
-#     premiere_versions = _get_installed_softwares_info("adobe premiere pro")
-#     if not premiere_versions:
-#         raise OSError("Could not find an Adobe Premiere Pro version installed on this computer")
-#     # find last installed version
-#     last_version_num = sorted([StrictVersion(v["DisplayVersion"]) for v in premiere_versions])[-1]
-#     last_version_info = [v for v in premiere_versions if v["DisplayVersion"] == str(last_version_num)][0]
-#     # search actual exe path
-#     base_path = last_version_info["InstallLocation"]
-#     build_year = last_version_info["DisplayName"].split(" ")[-1]
-#     wrong_paths = list()
-#     for folder_name in ["Adobe Premiere Pro CC {}", "Adobe Premiere Pro {}", ""]:  # different versions formatting
-#         exe_path = os.path.join(base_path, folder_name.format(build_year), "Adobe Premiere Pro.exe")
-#         if not os.path.isfile(exe_path):
-#             wrong_paths.append(exe_path)
-#             continue
-#         wrong_paths = list()
-#         break
-#     if len(wrong_paths) != 0:
-#         raise IOError("Could not find Premiere executable in '{}'".format(wrong_paths))
-#     return exe_path
-
-# def _get_last_premiere_exe_mac():
-#     """
-#     MACOS ONLY
-#     Get the executable path on disk of the last installed Premiere Pro version using macOS System Profiler
-
-#     :return: (str) path to executable
-#     """
-#     # list all installed app to a json datastructure
-#     output = subprocess.check_output(["system_profiler", "-json", "SPApplicationsDataType"])
-#     apps_data = json.loads(output)["SPApplicationsDataType"]
-#     # filter Premiere pro installed versions
-#     premiere_apps = [data for data in apps_data if "adobe premiere pro" in data["_name"].lower()]
-#     if not premiere_apps:
-#         raise OSError("Could not find an Adobe Premiere Pro version installed on this computer")
-#     # get last app version path
-#     premiere_apps.sort(key=lambda d: d["version"], reverse=True)
-#     return premiere_apps[0]["path"]
-
-# def _get_installed_softwares_info(name_filter, names=["DisplayVersion", "InstallLocation"]):
-#     """
-#     WINDOWS ONLY
-#     Looking into Uninstall key in Windows registry, we can get some infos about installed software
-
-#     :param name_filter: (str) filter software containing this name
-#     :return: (list of dict) info of software found
-#     """
-#     reg = wr.ConnectRegistry(None, wr.HKEY_LOCAL_MACHINE)
-#     key = wr.OpenKey(reg, r"SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall")
-#     apps_info = list()
-#     # list all installed apps
-#     for i in range(wr.QueryInfoKey(key)[0]):
-#         subkey_name = wr.EnumKey(key,i)
-#         subkey = wr.OpenKey(key, subkey_name)
-#         try:
-#             soft_name = wr.QueryValueEx(subkey, "DisplayName")[0]
-#         except EnvironmentError:
-#             continue
-#         if name_filter.lower() not in soft_name.lower():
-#             continue
-#         apps_info.append(dict({n: wr.QueryValueEx(subkey, n)[0] for n in names}, DisplayName=soft_name))
-#     return apps_info
 ###########################################
 ###########################################
 ###########################################
@@ -703,6 +637,7 @@ class Resolve_Interface(object):
 ###########################################
 ###########################################
 
+sample_rate = 44100
 newWindow = None
 playpos = 0
 p = pyaudio.PyAudio()
