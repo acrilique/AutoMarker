@@ -76,7 +76,9 @@ CREATE_NO_WINDOW = 0x08000000
 PREMIERE_PROCESS_NAME = "adobe premiere pro.exe" if WINDOWS_SYSTEM else "Adobe Premiere Pro"
 AFTERFX_PROCESS_NAME = "AfterFX.exe" if WINDOWS_SYSTEM else "Adobe After Effects"
 RESOLVE_PROCESS_NAME = "Resolve.exe" if WINDOWS_SYSTEM else "Resolve"
+BLENDER_PROCESS_NAME = "blender.exe" if WINDOWS_SYSTEM else "blender"
 CEPPANEL_PROCESS_NAME = "CEPHtmlEngine.exe" if WINDOWS_SYSTEM else "CEPHtmlEngine"
+SAMPLE_RATE = 44100
 
 ###############################
 ###############################
@@ -151,12 +153,12 @@ def obtain_data_from_file():
     info.set("Reading file from source...")
     root.update()
     
-    data, samplerate = librosa.load(path=path.get(), sr=sample_rate, mono=True)
+    data, samplerate = librosa.load(path=path.get(), sr=SAMPLE_RATE, mono=True)
     
     info.set("Getting beat positions...")
     root.update()
     
-    tempo, beatsamples = librosa.beat.beat_track(y=data, units="time", sr=sample_rate)
+    tempo, beatsamples = librosa.beat.beat_track(y=data, units="time", sr=SAMPLE_RATE)
     
     info.set("Displaying preview")
     root.update()
@@ -174,8 +176,8 @@ def child_window_setup():
     playButton = ttk.Button(newWindow, text="Play", command=play_preview)
 
     # Draw the waveform 
-    stepsize = int(len(data[:sample_rate * 10]) / 1000)
-    buffer = [int(x * 130 + 210) for x in data[:sample_rate * 10:stepsize]]
+    stepsize = int(len(data[:SAMPLE_RATE * 10]) / 1000)
+    buffer = [int(x * 130 + 210) for x in data[:SAMPLE_RATE * 10:stepsize]]
     for i in range(len(buffer)-1):
         canvas.create_line(i, buffer[i], i + 1, buffer[i+1], fill="black")
 
@@ -216,13 +218,13 @@ def callback(in_data, frame_count, time_info, status):
     global playpos
     chunk = data[playpos:playpos+frame_count]
     playpos += frame_count
-    if playpos >= sample_rate*10:
+    if playpos >= SAMPLE_RATE*10:
         return (chunk, pyaudio.paComplete)
     return (chunk, pyaudio.paContinue)
 
 def play_preview():
     global stream, iid
-    stream = p.open(format=pyaudio.paFloat32, channels=1, rate=sample_rate, output=True, stream_callback=callback)
+    stream = p.open(format=pyaudio.paFloat32, channels=1, rate=SAMPLE_RATE, output=True, stream_callback=callback)
     thread = Thread(target=track_line)
     thread.daemon = True
     thread.start()
@@ -239,9 +241,9 @@ def track_line():
     global playpos
     global stream
     if changepos.get():
-        playpos = int(playpos_param.get()/999*sample_rate*10)
+        playpos = int(playpos_param.get()/999*SAMPLE_RATE*10)
         changepos.set(False)
-    position = int(playpos*999/sample_rate/10)
+    position = int(playpos*999/SAMPLE_RATE/10)
     newWindow.children["!canvas"].delete("line")
     newWindow.children["!canvas"].create_line(position, 120, position, 300, fill="red", tags="line")
     newWindow.update()
@@ -364,14 +366,20 @@ class AE_JSWrapper(object):
         if not len(self.aeVersion):
             self.aeVersion = str(int(time.strftime("%Y")[2:]) + 1) + ".0"
 
-        # Get the AE_ exe path from the registry. 
-        try:
-            self.aeKey = _winreg.OpenKey(_winreg.HKEY_LOCAL_MACHINE, "SOFTWARE\\Adobe\\After Effects\\" + self.aeVersion)
-        except:
-            print ("ERROR: Unable to find After Effects version " + self.aeVersion + " on this computer\nTo get correct version number please check https://en.wikipedia.org/wiki/Adobe_After_Effects\nFor example, \"After Effect CC 2019\" is version \"16.0\"")
-            sys.exit()
+        if WINDOWS_SYSTEM:
+            # Get the AE_ exe path from the registry. 
+            try:
+                self.aeKey = _winreg.OpenKey(_winreg.HKEY_LOCAL_MACHINE, "SOFTWARE\\Adobe\\After Effects\\" + self.aeVersion)
+            except:
+                print ("ERROR: Unable to find After Effects version " + self.aeVersion + " on this computer\nTo get correct version number please check https://en.wikipedia.org/wiki/Adobe_After_Effects\nFor example, \"After Effect CC 2019\" is version \"16.0\"")
 
-        self.aeApp = _winreg.QueryValueEx(self.aeKey, 'InstallPath')[0] + 'AfterFX.exe'          
+            self.aeApp = _winreg.QueryValueEx(self.aeKey, 'InstallPath')[0] + 'AfterFX.exe'          
+        else:
+            guess_path = "/Applications/Adobe After Effects" + self.aeVersion + "/Adobe After Effects " + self.aeVersion + ".app/Contents/MacOS/AfterFX"
+            if os.path.exists(guess_path):
+                self.aeApp = guess_path
+            else:
+                print ("ERROR: Unable to find After Effects version " + self.aeVersion + " on this computer\nTo get correct version number please check https://en.wikipedia.org/wiki/Adobe_After_Effects\nFor example, \"After Effect CC 2019\" is version \"16.0\"")
 
         # Get the path to the return file. Create it if it doesn't exist.
         if not len(returnFolder):
@@ -636,8 +644,6 @@ class Resolve_Interface(object):
 
 ###########################################
 ###########################################
-
-sample_rate = 44100
 newWindow = None
 playpos = 0
 p = pyaudio.PyAudio()
@@ -718,7 +724,8 @@ versionLabel.grid(column=1, row=10, sticky=(tk.E))
 for child in mainframe.winfo_children(): 
     child.grid_configure(padx=5, pady=5)
 
-root.iconbitmap(os.path.join(basedir, "icon.ico"))
+icon = tk.PhotoImage(file=os.path.join(basedir, "icon.png"))
+root.tk.call('wm', 'iconphoto', root._w, icon)
 root.after(0, update_runvar)
 
 root.mainloop()
