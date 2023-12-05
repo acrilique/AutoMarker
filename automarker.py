@@ -65,7 +65,9 @@ if flag_content == "not_installed":
     if WINDOWS_SYSTEM:
         subprocess.run([os.path.join(basedir, 'extension_installer_win.bat')])
     else:
-        subprocess.run([os.path.join(basedir, 'extension_installer_mac.sh')])
+        script_path = os.path.join(basedir, 'extension_installer_mac.sh')
+        subprocess.run(['chmod', '+x', script_path])
+        subprocess.run([script_path])
     os.makedirs(os.path.dirname(flag_path), exist_ok=True)
     # Update the flag.txt file to indicate that the script has been executed, erasing old text
     with open(flag_path, 'w') as flag_file:
@@ -113,9 +115,7 @@ def place_marks():
 
     every = everyvar.get()
     offset = offsetvar.get()
-    if (every > 1):
-        # Add only every x beats
-        beatsamplestoplace = beatsamples[offset::every]
+    beatsamplestoplace = beatsamples[offset::every]
     
     info.set("Placing markers...")
     root.update()
@@ -307,10 +307,10 @@ def exe_is_running(exe_name):
     pids = _get_pids_from_name(exe_name)
     if len(pids) == 1:
         return True, pids[0]
-    if len(pids) > 1 and exe_name != AFTERFX_PROCESS_NAME:
-        raise OSError("More than one process matching name '{}' were found running (pid: {})".format(exe_name, pids))
-    if len(pids) > 1 and exe_name == AFTERFX_PROCESS_NAME:
+    if len(pids) > 1 and (exe_name == AFTERFX_PROCESS_NAME or exe_name == PREMIERE_PROCESS_NAME):
         return True, pids[0]
+    if len(pids) > 1:
+        raise OSError("More than one process matching name '{}' were found running (pid: {})".format(exe_name, pids))
     return False, None
 
 def count_running_exe(exe_name):
@@ -345,7 +345,7 @@ def _get_pids_from_name(process_name):
     else:
         # use pgrep UNIX command to filter processes by name
         try:
-            output = subprocess.check_output(["pgrep", process_name])
+            output = subprocess.check_output(["pgrep", "-f", process_name])
         except subprocess.CalledProcessError:  # pgrep seems to crash if the given name is not a running process...
             return list()
         # parse output lines
@@ -364,7 +364,10 @@ class AE_JSWrapper(object):
 
         # Try to find last AE version if value is not specified. Currently 24.0 is the last version.
         if not len(self.aeVersion):
-            self.aeVersion = str(int(time.strftime("%Y")[2:]) + 1) + ".0"
+            if WINDOWS_SYSTEM:
+                self.aeVersion = str(int(time.strftime("%Y")[2:]) + 1) + ".0" # 24.0
+            else:# 2024
+                self.aeVersion = str(int(time.strftime("%Y")) + 1) # 2024
 
         if WINDOWS_SYSTEM:
             # Get the AE_ exe path from the registry. 
@@ -375,7 +378,7 @@ class AE_JSWrapper(object):
 
             self.aeApp = _winreg.QueryValueEx(self.aeKey, 'InstallPath')[0] + 'AfterFX.exe'          
         else:
-            guess_path = "/Applications/Adobe After Effects" + self.aeVersion + "/Adobe After Effects " + self.aeVersion + ".app/Contents/MacOS/AfterFX"
+            guess_path = "/Applications/Adobe After Effects " + self.aeVersion + "/Adobe After Effects " + self.aeVersion + ".app/Contents/aerendercore.app/Contents/MacOS/aerendercore"
             if os.path.exists(guess_path):
                 self.aeApp = guess_path
             else:
@@ -383,7 +386,10 @@ class AE_JSWrapper(object):
 
         # Get the path to the return file. Create it if it doesn't exist.
         if not len(returnFolder):
-            returnFolder = os.path.join(tempfile.gettempdir(), "AutoMarker")
+            if WINDOWS_SYSTEM:
+                returnFolder = os.path.join(tempfile.gettempdir(), "AutoMarker")
+            else:
+                returnFolder = os.path.join(os.path.expanduser("~"), "Documents", "AutoMarker")
         self.returnFile = os.path.join(returnFolder, "ae_temp_ret.txt")
         if not os.path.exists(returnFolder):
             os.mkdir(returnFolder)
@@ -412,9 +418,20 @@ class AE_JSWrapper(object):
         self.commands = []
 
     def jsExecuteCommand(self):
-        target = [self.aeApp, "-ro", self.tempJsxFile]
+        if WINDOWS_SYSTEM:
+            target = [self.aeApp, "-ro", self.tempJsxFile]
+        else:
+            # Get the absolute path to the JSX file
+            jsx_file_path = os.path.abspath(self.tempJsxFile)
+            
+            # Activate After Effects
+            subprocess.Popen(['osascript', '-e', f'tell application "Adobe After Effects {self.aeVersion}" to activate'])
+            time.sleep(0.1)  # Wait for After Effects to activate
+            
+            # Run the JSX script
+            target = ['osascript', '-e', f'tell application "Adobe After Effects {self.aeVersion}" to DoScriptFile "{jsx_file_path}"']
         ret = subprocess.Popen(target)
-    
+
     def jsWriteDataOut(self, returnRequest):
         """ An example of getting a return value"""
         com = (
@@ -468,7 +485,7 @@ class AE_JSInterface(object):
         jsxTodo = f"""
 
         var item = app.project.activeItem;
-
+        var beats = {list};
         if (app.project.activeItem instanceof CompItem) {{
 
             var comp = app.project.activeItem;
@@ -476,9 +493,9 @@ class AE_JSInterface(object):
             var comp = app.project.item(1);
         }}
 
-        for (var i = 0; i < {list}.length;  i++) {{
+        for (var i = 0; i < beats.length;  i++) {{
             var compMarker = new MarkerValue(String(i));
-            comp.markerProperty.setValueAtTime({list}[i], compMarker);
+            comp.markerProperty.setValueAtTime(beats[i], compMarker);
         }}             
 
         """
@@ -649,10 +666,10 @@ playpos = 0
 p = pyaudio.PyAudio()
 stream = None
 
-if (is_afterfx_running()): aeApp = AE_JSInterface(returnFolder = os.path.join(tempfile.gettempdir(), "AutoMarker"))
+if (is_afterfx_running()): aeApp = AE_JSInterface()
 else: aeApp = None
 
-if (is_premiere_running()): prApp = PR_JSInterface(returnFolder = os.path.join(tempfile.gettempdir(), "AutoMarker"))
+if (is_premiere_running()): prApp = PR_JSInterface()
 else: prApp = None
 
 root = tk.Tk()
@@ -674,8 +691,10 @@ position_right = int(screen_width / 2 - window_width / 2)
 root.geometry("+{}+{}".format(position_right, position_top))
 
 style = ttk.Style()
-style.theme_use(themename='xpnative')
-
+if WINDOWS_SYSTEM:
+    style.theme_use(themename='xpnative')
+else:
+    style.theme_use(themename='aqua')
 mainframe = tk.Frame(root)
 mainframe.grid(column=0, row=0, sticky=(tk.N, tk.W, tk.E, tk.S))
 root.columnconfigure(0, weight=1)
