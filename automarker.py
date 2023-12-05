@@ -60,19 +60,20 @@ except FileNotFoundError:
     # If the file is not found, treat it as not installed
     flag_content = "not_installed"
 
-if flag_content == "not_installed":
-    # Execute the batch script
-    if WINDOWS_SYSTEM:
-        subprocess.run([os.path.join(basedir, 'extension_installer_win.bat')])
-    else:
-        script_path = os.path.join(basedir, 'extension_installer_mac.sh')
-        subprocess.run(['chmod', '+x', script_path])
-        subprocess.run([script_path])
-    os.makedirs(os.path.dirname(flag_path), exist_ok=True)
-    # Update the flag.txt file to indicate that the script has been executed, erasing old text
-    with open(flag_path, 'w') as flag_file:
-        flag_file.write("installed")
-        flag_file.close()
+
+# if flag_content == "not_installed":
+#     # Execute the batch script
+#     if WINDOWS_SYSTEM:
+#         subprocess.run([os.path.join(basedir, 'extension_installer_win.bat')])
+#     else:
+#         script_path = os.path.join(basedir, 'extension_installer_mac.sh')
+#         subprocess.run(['chmod', '+x', script_path])
+#         subprocess.run([script_path])
+#     os.makedirs(os.path.dirname(flag_path), exist_ok=True)
+#     # Update the flag.txt file to indicate that the script has been executed, erasing old text
+#     with open(flag_path, 'w') as flag_file:
+#         flag_file.write("installed")
+#         flag_file.close()
 
 CREATE_NO_WINDOW = 0x08000000
 PREMIERE_PROCESS_NAME = "adobe premiere pro.exe" if WINDOWS_SYSTEM else "Adobe Premiere Pro"
@@ -391,18 +392,18 @@ class AE_JSWrapper(object):
             else:
                 returnFolder = os.path.join(os.path.expanduser("~"), "Documents", "AutoMarker")
         self.returnFile = os.path.join(returnFolder, "ae_temp_ret.txt")
-        if not os.path.exists(returnFolder):
-            os.mkdir(returnFolder)
+        # if not os.path.exists(returnFolder):
+        #     os.mkdir(returnFolder)
         
-        # Ensure the return file exists...
-        with open(self.returnFile, 'w') as f:
-                f.close()  
+        # # Ensure the return file exists...
+        # with open(self.returnFile, 'w') as f:
+        #         f.close()  
             
         # Establish the last time the temp file was modified. We use this to listen for changes. 
-        self.lastModTime = os.path.getmtime(self.returnFile)         
+        # self.lastModTime = os.path.getmtime(self.returnFile)         
         
-        # Temp file to store the .jsx commands. 
-        self.tempJsxFile = os.path.join(returnFolder, "ae_temp_com.jsx")
+        # # Temp file to store the .jsx commands. 
+        # self.tempJsxFile = os.path.join(returnFolder, "ae_temp_com.jsx")
         
         # This list is used to hold all the strings which eventually become our .jsx file. 
         self.commands = []    
@@ -694,7 +695,7 @@ style = ttk.Style()
 if WINDOWS_SYSTEM:
     style.theme_use(themename='xpnative')
 else:
-    style.theme_use(themename='aqua')
+    style.theme_use(themename='clam')
 mainframe = tk.Frame(root)
 mainframe.grid(column=0, row=0, sticky=(tk.N, tk.W, tk.E, tk.S))
 root.columnconfigure(0, weight=1)
