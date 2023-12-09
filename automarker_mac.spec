@@ -39,7 +39,6 @@ exe = EXE(
     target_arch='x86_64',
     codesign_identity='E9D38CA0B9FF902804EED51AAE0119CD2F0168E1',
     entitlements_file='entitlements.plist',
-    icon='icon.png',
 )
 coll = COLLECT(
     exe,
@@ -48,11 +47,11 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='automarker',
+    name='AutoMarker',
 )
 app = BUNDLE(
     coll,
-    name='automarker.app',
-    icon=None,
-    bundle_identifier=None,
+    name='AutoMarker.app',
+    icon='icon.png',
+    bundle_identifier='com.acrilique.automarker',
 )

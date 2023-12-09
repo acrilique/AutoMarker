@@ -76,7 +76,7 @@ if flag_content == "not_installed":
 
 CREATE_NO_WINDOW = 0x08000000
 PREMIERE_PROCESS_NAME = "adobe premiere pro.exe" if WINDOWS_SYSTEM else "Adobe Premiere Pro"
-AFTERFX_PROCESS_NAME = "AfterFX.exe" if WINDOWS_SYSTEM else "Adobe After Effects"
+AFTERFX_PROCESS_NAME = "AfterFX.exe" if WINDOWS_SYSTEM else "After Effects"
 RESOLVE_PROCESS_NAME = "Resolve.exe" if WINDOWS_SYSTEM else "Resolve"
 BLENDER_PROCESS_NAME = "blender.exe" if WINDOWS_SYSTEM else "blender"
 CEPPANEL_PROCESS_NAME = "CEPHtmlEngine.exe" if WINDOWS_SYSTEM else "CEPHtmlEngine"
@@ -92,11 +92,11 @@ def update_runvar():
     global aeApp, prApp
     if(is_premiere_running()[0]):
         if (prApp==None):
-            prApp = PR_JSInterface(returnFolder = os.path.join(tempfile.gettempdir(), "AutoMarker"))
+            prApp = PR_JSInterface()
         runvar.set("Premiere Pro is running!")
     elif(is_afterfx_running()[0]):
         if (aeApp==None):
-            aeApp = AE_JSInterface(returnFolder = os.path.join(tempfile.gettempdir(), "AutoMarker"))
+            aeApp = AE_JSInterface()
         runvar.set("After Effects is running!")
     elif(is_resolve_running()[0]):
         runvar.set("Resolve is running!")
@@ -345,7 +345,7 @@ def _get_pids_from_name(process_name):
     else:
         # use pgrep UNIX command to filter processes by name
         try:
-            output = subprocess.check_output(["pgrep", "-f", process_name])
+            output = subprocess.check_output(["pgrep", process_name])
         except subprocess.CalledProcessError:  # pgrep seems to crash if the given name is not a running process...
             return list()
         # parse output lines
