@@ -15,6 +15,7 @@ import subprocess
 import platform
 import time
 import tempfile
+import socket
 
 ###############################
 ###############################
@@ -46,7 +47,6 @@ else:
 
 try:
     from ctypes import windll  # Only exists on Windows.
-
     myappid = "acrilique.automarker"
     windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 except ImportError:
@@ -659,9 +659,71 @@ class Resolve_Interface(object):
         # Open Edit page
         resolve.OpenPage("edit")
         timeline.DeleteMarkersByColor("Blue")
+###########################################
+###########################################
 
+def makeBlenderInstallerScript():
+    
+    text = f"""
+import bpy
+import shutil, os
+from addon_utils import enable
+
+src_dir = {basedir} + "/blender_command_port"
+dst_dir = bpy.utils.script_path_user() + "/addons/blender_command_port"
+
+print(src_dir)
+print("hey")
+shutil.copytree(src_dir, dst_dir)
+
+addon = enable(module="blender_command_port", default_set=True, persistent=True, handle_error=None)
+
+
+    """
+    
+def sendCommandToBlender(command):
+    clientsocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    clientsocket.connect(('localhost', 5000))
+    clientsocket.sendall(command.encode())
+    res = []
+    while True:
+        res.append(clientsocket.recv(4096))
+        if not res:
+            break
+        for i in res:
+            print(i.decode())
+    clientsocket.close()
+    return res
+
+def getBlenderScriptFolder():
+    text = """
+    import bpy
+    bpy.utils.script_path_user()
+    """
+    return sendCommandToBlender(text)[0].decode()
+    
+def addMarkersToBlender(list):
+    text = f"""
+    import bpy
+    markers = bpy.context.scene.timeline_markers
+    for i in range(len({list})):
+        markers.new(str(i), frame={list}[i])
+    """
+
+    sendCommandToBlender(text)
+
+def clearAllMarkersInBlender():
+    text = """
+    import bpy
+    markers = bpy.context.scene.timeline_markers
+    for marker in markers:
+        markers.remove(marker)
+    """
+
+    sendCommandToBlender(text)
 ###########################################
 ###########################################
+sample_rate = 44100
 newWindow = None
 playpos = 0
 p = pyaudio.PyAudio()
