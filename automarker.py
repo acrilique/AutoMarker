@@ -15,10 +15,19 @@ import subprocess
 import platform
 import time
 import tempfile
+from distutils.version import StrictVersion
 
 ###############################
 ###############################
 ###############################
+# INITIAL SETUP
+#  - Check what system are we in (Windows or macOS)
+#  - Set the environment variables
+#  - Set the basedir variable to the directory where the script is located
+#  - Install premiere and blender extensions if needed
+#  - Set the custom font
+#  - Set the constants
+#  Note: basedir isn't a constant because its location is decided at runtime
 ###############################
 
 if platform.system().lower() == "windows":
@@ -85,6 +94,20 @@ SAMPLE_RATE = 44100
 ###############################
 ###############################
 ###############################
+# FUNCTIONS FOR THE INTERFACE
+#  - update_runvar: updates the label that shows if a compatible app is running
+#  - auto_beat_marker: opens a thread to place the markers
+#  - place_marks: places the markers in the sequence/composition/timeline (Premiere/AE/Resolve)
+#  - clear_all_markers: clears all the markers in the sequence/composition/timeline
+#  - obtain_data_from_file: reads the file and obtains the beat positions
+#  - child_window_setup: sets up the child window that shows the waveform and the markers
+#  - retreive_and_preview: opens a thread to read the file and show the waveform and the markers
+#  - select_file: opens a file dialog to select the audio file
+#  - callback: callback function for the pyaudio stream
+#  - play_preview: plays the preview of the audio file
+#  - on_left_click: callback function for the left click on the canvas, used to change the play position live
+#  - track_line: tracks the play position and updates the line on the canvas
+#  - update_markers: updates the markers on the canvas to the new values from the sliders
 ###############################
 
 def update_runvar():
@@ -274,7 +297,9 @@ def update_markers():
 ###########################################
 ###########################################
 ###########################################
-# Functions to check if apps are running
+# FUNCTIONS TO CHECK FOR RUNNING APPS AND LOOK PATHS TO EXECUTABLES
+# - They are self-explanatory, and their purpose is to create an easy and multiplatform access to this functionality.
+###########################################
 def is_premiere_running():
     """
     Is there a running instance of the Premiere Pro app on this machine ?
@@ -354,8 +379,81 @@ def _get_pids_from_name(process_name):
 
         return list(map(int, lines))
 
+def _get_last_exe_mac(app_name):
+    """
+    MACOS ONLY
+    Get the executable path on disk of the last installed application version using macOS System Profiler
+
+    :param app_name: (str) name of the application
+    :return: (str) path to executable
+    """
+    # list all installed app to a json datastructure
+    output = subprocess.check_output(["system_profiler", "-json", "SPApplicationsDataType"])
+    apps_data = json.loads(output)["SPApplicationsDataType"]
+    # filter installed versions of the specified application
+    app_apps = [data for data in apps_data if app_name.lower() in data["_name"].lower()]
+    if not app_apps:
+        raise OSError(f"Could not find a {app_name} version installed on this computer")
+    # get last app version path
+    app_apps.sort(key=lambda d: d["version"], reverse=True)
+    return app_apps[0]["path"]
+
+def _get_last_exe_windows(app_name):
+    """
+    WINDOWS ONLY
+    Get the executable path on disk of the last installed application version using windows registry
+
+    :param app_name: (str) name of the application
+    :return: (str) path to executable
+    """
+    app_versions = _get_installed_softwares_info(app_name.lower())
+    if not app_versions:
+        raise OSError(f"Could not find a {app_name} version installed on this computer")
+    # find last installed version
+    last_version_num = sorted([StrictVersion(v["DisplayVersion"]) for v in app_versions])[-1]
+    last_version_info = [v for v in app_versions if v["DisplayVersion"] == str(last_version_num)][0]
+    # search actual exe path
+    base_path = last_version_info["InstallLocation"]
+    build_year = last_version_info["DisplayName"].split(" ")[-1]
+    wrong_paths = list()
+    for folder_name in [f"{app_name} CC {{}}", f"{app_name} {{}}", ""]:  # different versions formatting
+        exe_path = os.path.join(base_path, folder_name.format(build_year), f"{app_name}.exe")
+        if not os.path.isfile(exe_path):
+            wrong_paths.append(exe_path)
+            continue
+        wrong_paths = list()
+        break
+    if len(wrong_paths) != 0:
+        raise IOError(f"Could not find {app_name} executable in '{wrong_paths}'")
+    return exe_path
+
+def _get_installed_softwares_info(name_filter, names=["DisplayVersion", "InstallLocation"]):
+    """
+    WINDOWS ONLY
+    Looking into Uninstall key in Windows registry, we can get some infos about installed software
+
+    :param name_filter: (str) filter software containing this name
+    :return: (list of dict) info of software found
+    """
+    reg = _winreg.ConnectRegistry(None, _winreg.HKEY_LOCAL_MACHINE)
+    key = _winreg.OpenKey(reg, r"SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall")
+    apps_info = list()
+    # list all installed apps
+    for i in range(_winreg.QueryInfoKey(key)[0]):
+        subkey_name = _winreg.EnumKey(key,i)
+        subkey = _winreg.OpenKey(key, subkey_name)
+        try:
+            soft_name = _winreg.QueryValueEx(subkey, "DisplayName")[0]
+        except EnvironmentError:
+            continue
+        if name_filter.lower() not in soft_name.lower():
+            continue
+        apps_info.append(dict({n: _winreg.QueryValueEx(subkey, n)[0] for n in names}, DisplayName=soft_name))
+    return apps_info
 ###########################################
 ###########################################
+###########################################
+# INTERFACES TO HANDLE THE COMMUNICATION WITH THE APPS
 ###########################################
 # AE interface
 class AE_JSWrapper(object):
@@ -383,7 +481,20 @@ class AE_JSWrapper(object):
                 self.aeApp = guess_path
             else:
                 print ("ERROR: Unable to find After Effects version " + self.aeVersion + " on this computer\nTo get correct version number please check https://en.wikipedia.org/wiki/Adobe_After_Effects\nFor example, \"After Effect CC 2019\" is version \"16.0\"")
-
+        ## WE SHOULD TRY THIS IN A MAC ENVIRONMENT.
+        # if WINDOWS_SYSTEM:
+        #     # Get the AE_ exe.
+        #     try:
+        #         self.aeApp = _get_last_exe_windows(AFTERFX_PROCESS_NAME)
+        #     except Exception as e:
+        #         print (e)
+        #         pass
+        # else:
+        #     try:
+        #         self.aeApp = _get_last_exe_mac(AFTERFX_PROCESS_NAME)
+        #     except Exception as e:
+        #         print (e)
+        #         pass
         # Get the path to the return file. Create it if it doesn't exist.
         if not len(returnFolder):
             if WINDOWS_SYSTEM:
@@ -660,6 +771,9 @@ class Resolve_Interface(object):
         timeline.DeleteMarkersByColor("Blue")
 
 ###########################################
+###########################################
+###########################################
+# MAIN WINDOW
 ###########################################
 newWindow = None
 playpos = 0
