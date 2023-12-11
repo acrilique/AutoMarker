@@ -73,7 +73,9 @@ if flag_content == "not_installed":
     if WINDOWS_SYSTEM:
         subprocess.run([os.path.join(basedir, 'extension_installer_win.bat')])
     else:
-        subprocess.run([os.path.join(basedir, 'extension_installer_mac.sh')])
+        script_path = os.path.join(basedir, 'extension_installer_mac.sh')
+        subprocess.run(['chmod', '+x', script_path])
+        subprocess.run([script_path])
     os.makedirs(os.path.dirname(flag_path), exist_ok=True)
     # Update the flag.txt file to indicate that the script has been executed, erasing old text
     with open(flag_path, 'w') as flag_file:
@@ -82,12 +84,11 @@ if flag_content == "not_installed":
 
 CREATE_NO_WINDOW = 0x08000000
 PREMIERE_PROCESS_NAME = "adobe premiere pro.exe" if WINDOWS_SYSTEM else "Adobe Premiere Pro"
-AFTERFX_PROCESS_NAME = "AfterFX.exe" if WINDOWS_SYSTEM else "Adobe After Effects"
+AFTERFX_PROCESS_NAME = "AfterFX.exe" if WINDOWS_SYSTEM else "After Effects"
 RESOLVE_PROCESS_NAME = "Resolve.exe" if WINDOWS_SYSTEM else "Resolve"
 BLENDER_PROCESS_NAME = "blender.exe" if WINDOWS_SYSTEM else "blender"
 CEPPANEL_PROCESS_NAME = "CEPHtmlEngine.exe" if WINDOWS_SYSTEM else "CEPHtmlEngine"
 SAMPLE_RATE = 44100
-TEMP_DIR = os.path.join(tempfile.gettempdir(), "AutoMarker")
 
 ###########################################
 ###########################################
@@ -127,10 +128,10 @@ def exe_is_running(exe_name):
     pids = _get_pids_from_name(exe_name)
     if len(pids) == 1:
         return True, pids[0]
-    if len(pids) > 1 and exe_name != AFTERFX_PROCESS_NAME:
-        raise OSError("More than one process matching name '{}' were found running (pid: {})".format(exe_name, pids))
-    if len(pids) > 1 and exe_name == AFTERFX_PROCESS_NAME:
+    if len(pids) > 1 and (exe_name == AFTERFX_PROCESS_NAME or exe_name == PREMIERE_PROCESS_NAME):
         return True, pids[0]
+    if len(pids) > 1:
+        raise OSError("More than one process matching name '{}' were found running (pid: {})".format(exe_name, pids))
     return False, None
 
 def count_running_exe(exe_name):
@@ -257,24 +258,45 @@ class AE_JSWrapper(object):
 
         # Try to find last AE version if value is not specified. Currently 24.0 is the last version.
         if not len(self.aeVersion):
-            self.aeVersion = str(int(time.strftime("%Y")[2:]) + 1) + ".0"
+            if WINDOWS_SYSTEM:
+                self.aeVersion = str(int(time.strftime("%Y")[2:]) + 1) + ".0" # 24.0
+            else:# 2024
+                self.aeVersion = str(int(time.strftime("%Y")) + 1) # 2024
 
         if WINDOWS_SYSTEM:
-            # Get the AE_ exe.
+            # Get the AE_ exe path from the registry. 
             try:
-                self.aeApp = _get_last_exe_windows(AFTERFX_PROCESS_NAME)
-            except Exception as e:
-                print (e)
-                pass
+                self.aeKey = _winreg.OpenKey(_winreg.HKEY_LOCAL_MACHINE, "SOFTWARE\\Adobe\\After Effects\\" + self.aeVersion)
+            except:
+                print ("ERROR: Unable to find After Effects version " + self.aeVersion + " on this computer\nTo get correct version number please check https://en.wikipedia.org/wiki/Adobe_After_Effects\nFor example, \"After Effect CC 2019\" is version \"16.0\"")
+
+            self.aeApp = _winreg.QueryValueEx(self.aeKey, 'InstallPath')[0] + 'AfterFX.exe'          
         else:
-            try:
-                self.aeApp = _get_last_exe_mac(AFTERFX_PROCESS_NAME)
-            except Exception as e:
-                print (e)
-                pass
+            guess_path = "/Applications/Adobe After Effects " + self.aeVersion + "/Adobe After Effects " + self.aeVersion + ".app/Contents/aerendercore.app/Contents/MacOS/aerendercore"
+            if os.path.exists(guess_path):
+                self.aeApp = guess_path
+            else:
+                print ("ERROR: Unable to find After Effects version " + self.aeVersion + " on this computer\nTo get correct version number please check https://en.wikipedia.org/wiki/Adobe_After_Effects\nFor example, \"After Effect CC 2019\" is version \"16.0\"")
+        ## WE SHOULD TRY THIS IN A MAC ENVIRONMENT.
+        # if WINDOWS_SYSTEM:
+        #     # Get the AE_ exe.
+        #     try:
+        #         self.aeApp = _get_last_exe_windows(AFTERFX_PROCESS_NAME)
+        #     except Exception as e:
+        #         print (e)
+        #         pass
+        # else:
+        #     try:
+        #         self.aeApp = _get_last_exe_mac(AFTERFX_PROCESS_NAME)
+        #     except Exception as e:
+        #         print (e)
+        #         pass
         # Get the path to the return file. Create it if it doesn't exist.
         if not len(returnFolder):
-            returnFolder = TEMP_DIR
+            if WINDOWS_SYSTEM:
+                returnFolder = os.path.join(tempfile.gettempdir(), "AutoMarker")
+            else:
+                returnFolder = os.path.join(os.path.expanduser("~"), "Documents", "AutoMarker")
         self.returnFile = os.path.join(returnFolder, "ae_temp_ret.txt")
         if not os.path.exists(returnFolder):
             os.mkdir(returnFolder)
@@ -303,9 +325,20 @@ class AE_JSWrapper(object):
         self.commands = []
 
     def jsExecuteCommand(self):
-        target = [self.aeApp, "-ro", self.tempJsxFile]
+        if WINDOWS_SYSTEM:
+            target = [self.aeApp, "-ro", self.tempJsxFile]
+        else:
+            # Get the absolute path to the JSX file
+            jsx_file_path = os.path.abspath(self.tempJsxFile)
+            
+            # Activate After Effects
+            subprocess.Popen(['osascript', '-e', f'tell application "Adobe After Effects {self.aeVersion}" to activate'])
+            time.sleep(0.1)  # Wait for After Effects to activate
+            
+            # Run the JSX script
+            target = ['osascript', '-e', f'tell application "Adobe After Effects {self.aeVersion}" to DoScriptFile "{jsx_file_path}"']
         ret = subprocess.Popen(target)
-    
+
     def jsWriteDataOut(self, returnRequest):
         """ An example of getting a return value"""
         com = (
@@ -359,7 +392,7 @@ class AE_JSInterface(object):
         jsxTodo = f"""
 
         var item = app.project.activeItem;
-
+        var beats = {list};
         if (app.project.activeItem instanceof CompItem) {{
 
             var comp = app.project.activeItem;
@@ -367,9 +400,9 @@ class AE_JSInterface(object):
             var comp = app.project.item(1);
         }}
 
-        for (var i = 0; i < {list}.length;  i++) {{
+        for (var i = 0; i < beats.length;  i++) {{
             var compMarker = new MarkerValue(String(i));
-            comp.markerProperty.setValueAtTime({list}[i], compMarker);
+            comp.markerProperty.setValueAtTime(beats[i], compMarker);
         }}             
 
         """
@@ -495,7 +528,7 @@ class Resolve_Interface(object):
         timeline = project.GetCurrentTimeline()  # current timeline
 
         if not timeline:
-            print("Error: No current timeline exist, add a timeline and try again!")
+            print("Error: No current timeline exist, add a timeline (recommended duration >= 80 frames) and try again!")
             return
 
         # Open Edit page
