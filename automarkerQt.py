@@ -1,7 +1,8 @@
 # AutoMarker by acrilique.
-from PySide6.QtGui import QRawFont
-from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QSlider, QPushButton, QLabel
-from threading import Thread
+# This script is a Qt version of the original automarker.py script by acrilique.
+from PySide6.QtCore import QThread, Signal, Qt, QRect, QLineF, QPointF
+from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QSlider, QPushButton, QLabel, QHBoxLayout, QVBoxLayout, QSizePolicy, QGroupBox, QWidget
+from PySide6.QtGui import QIcon, QPainter, QColor, QLinearGradient, QGradient
 import librosa
 import pyaudio
 import requests
@@ -378,7 +379,6 @@ class AE_JSWrapper(object):
         for item in content:
             res.append(str(item.rstrip()))
         return res
-# An interface to actually call those commands. 
 class AE_JSInterface(object):
     
     def __init__(self, aeVersion = "", returnFolder = ""):
@@ -388,7 +388,7 @@ class AE_JSInterface(object):
     def openAE(self):
         self.aeCom.openAE()
 
-    def jsAddMarkers(self, list):
+    def addMarkers(self, list):
         jsxTodo = f"""
 
         var item = app.project.activeItem;
@@ -413,7 +413,7 @@ class AE_JSInterface(object):
         self.aeCom.jsExecuteCommand()
         time.sleep(0.1)
     
-    def jsClearAllMarkers(self):
+    def clearAllMarkers(self):
         jsxTodo = f"""
 
         var item = app.project.activeItem;
@@ -444,7 +444,6 @@ class PR_JSWrapper(object):
     def jsExecuteCommand(self):
         json_data = json.dumps({"to_eval": self.jsxTodo})
         response = requests.post("http://127.0.0.1:3000", data=json_data)
-
 # Actual interface
 class PR_JSInterface(object):
 
@@ -452,7 +451,7 @@ class PR_JSInterface(object):
 
         self.prCom = PR_JSWrapper(prVersion, returnFolder) # Create wrapper to handle JSX
 
-    def jsAddMarkers(self, list):
+    def addMarkers(self, list):
         self.prCom.jsxTodo = f"""
 
         for (var i = 0; i < {list}.length;  i++) {{
@@ -467,7 +466,7 @@ class PR_JSInterface(object):
         self.prCom.jsExecuteCommand()
         time.sleep(0.1)
 
-    def jsClearAllMarkers(self):
+    def clearAllMarkers(self):
         self.prCom.jsxTodo = f"""
 
         var markers = app.project.activeSequence.markers;
@@ -516,7 +515,7 @@ class Resolve_Interface(object):
 
         return bmd.scriptapp("Resolve")
     
-    def addMarkerToCurrentTimeline(self, second, color = "Blue"):
+    def addMarkers(self, list, color = "Blue"):
         resolve = self.resolve
         if not resolve:
             print("Error: Failed to get resolve object!")
@@ -541,12 +540,13 @@ class Resolve_Interface(object):
         framerate = timeline.GetSetting("timelineFrameRate")
 
         # Add Markers
-        frame = int(second * framerate)
-        if numFrames >= 1:
-            try: timeline.DeleteMarkerAtFrame(frame)
-            except: pass
-            isSuccess = timeline.AddMarker(frame, "Blue", "AutoMarker", "beat-related", 1)
-    
+        for beat in list:
+            frame = int(beat * framerate)
+            if numFrames >= 1:
+                try: timeline.DeleteMarkerAtFrame(frame)
+                except: pass
+                isSuccess = timeline.AddMarker(frame, "Blue", "AutoMarker", "beat-related", 1)
+
     def clearAllMarkers(self):
         resolve = self.resolve
         if not resolve:
@@ -568,306 +568,295 @@ class Resolve_Interface(object):
 ###############################
 ###############################
 ###############################
-# FUNCTIONS FOR THE INTERFACE
-#  - update_runvar: updates the label that shows if a compatible app is running
-#  - auto_beat_marker: opens a thread to place the markers
-#  - place_marks: places the markers in the sequence/composition/timeline (Premiere/AE/Resolve)
-#  - clear_all_markers: clears all the markers in the sequence/composition/timeline
-#  - obtain_data_from_file: reads the file and obtains the beat positions
-#  - child_window_setup: sets up the child window that shows the waveform and the markers
-#  - retreive_and_preview: opens a thread to read the file and show the waveform and the markers
-#  - select_file: opens a file dialog to select the audio file
-#  - callback: callback function for the pyaudio stream
-#  - play_preview: plays the preview of the audio file
-#  - on_left_click: callback function for the left click on the canvas, used to change the play position live
-#  - track_line: tracks the play position and updates the line on the canvas
-#  - update_markers: updates the markers on the canvas to the new values from the sliders
-###############################
-
-# def update_runvar():
-
-#     global aeApp, prApp
-#     if(is_premiere_running()[0]):
-#         if (prApp==None):
-#             prApp = PR_JSInterface(returnFolder = TEMP_DIR)
-#         runvar.set("Premiere Pro is running!")
-#     elif(is_afterfx_running()[0]):
-#         if (aeApp==None):
-#             aeApp = AE_JSInterface(returnFolder = TEMP_DIR)
-#         runvar.set("After Effects is running!")
-#     elif(is_resolve_running()[0]):
-#         runvar.set("Resolve is running!")
-#     else:
-#         runvar.set("App isn't running...")
-#     root.after(1000, update_runvar)
-
-# def auto_beat_marker():
-#     if (is_premiere_running()[0] or is_afterfx_running()[0] or is_resolve_running()[0]):
-#         thread = Thread(target=place_marks)
-#         thread.daemon = True
-#         thread.start()
-
-# def place_marks():
-#     global data
-
-#     every = everyvar.get()
-#     offset = offsetvar.get()
-#     if (every > 1):
-#         # Add only every x beats
-#         beatsamplestoplace = beatsamples[offset::every]
-    
-#     info.set("Placing markers...")
-#     root.update()
-
-#     if(is_premiere_running()[0]): 
-#         prApp.jsAddMarkers(beatsamplestoplace.tolist())
-#     elif(is_afterfx_running()[0]):
-#         aeApp.jsAddMarkers(beatsamplestoplace.tolist())
-#     elif(is_resolve_running()[0]):
-#         for beat in beatsamplestoplace:
-#             resApp = Resolve_Interface()
-#             resApp.addMarkerToCurrentTimeline(second=beat)
-#     info.set("Done!")
-
-# def clear_all_markers():
-#     if (is_premiere_running()[0] or is_afterfx_running()[0] or is_resolve_running()[0]):
-#         thread = Thread(target=remove_marks)
-#         thread.daemon = True
-#         thread.start()
-
-# def remove_marks():
-#     info.set("Removing markers...")
-#     root.update()
-#     if(is_premiere_running()[0]): 
-#         prApp.jsClearAllMarkers()
-#     elif(is_afterfx_running()[0]):
-#         aeApp.jsClearAllMarkers()
-#     elif(is_resolve_running()[0]):
-#         resApp = Resolve_Interface()
-#         resApp.clearAllMarkers()
-#     info.set("Done!")
-
-# def obtain_data_from_file():
-#     global data, beatsamples
-#     info.set("Reading file from source...")
-#     root.update()
-    
-#     data, samplerate = librosa.load(path=path.get(), sr=SAMPLE_RATE, mono=True)
-    
-#     info.set("Getting beat positions...")
-#     root.update()
-    
-#     tempo, beatsamples = librosa.beat.beat_track(y=data, units="time", sr=SAMPLE_RATE)
-    
-#     info.set("Displaying preview")
-#     root.update()
-
-#     data = numpy.asfortranarray(data)
-
-# def child_window_setup():
-#     global newWindow
-#     newWindow = tk.Toplevel(root)
-#     newWindow.title("Marker placement")
-#     newWindow.geometry("1000x380")
-
-#     canvas = tk.Canvas(newWindow, width=1000, height=300, bg="white")
-#     updateButton = ttk.Button(newWindow, text="Update markers", command=update_markers)
-#     playButton = ttk.Button(newWindow, text="Play", command=play_preview)
-
-#     # Draw the waveform 
-#     stepsize = int(len(data[:SAMPLE_RATE * 10]) / 1000)
-#     buffer = [int(x * 130 + 210) for x in data[:SAMPLE_RATE * 10:stepsize]]
-#     for i in range(len(buffer)-1):
-#         canvas.create_line(i, buffer[i], i + 1, buffer[i+1], fill="black")
-
-#     # Draw markers 
-#     for i in range(beatsamples.size):
-#         beat = beatsamples[i]
+# QT CLASSES
+class Layout(QWidget):
+    # this class is only for the set of widgets that are inside the main window, not menubar or statusbar
+    def __init__(self):
+        super().__init__()
+        self.create_markers_button = QPushButton("Create markers")
+        self.create_markers_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.create_markers_button.setMaximumHeight(150)
+        self.remove_markers_button = QPushButton("Remove markers")
         
-#         if beat < 10:
-#             canvas.create_rectangle((beat*100 - 8, 90, beat*100 + 8, 110), fill="green", tags="marker") 
+        self.group_box = QGroupBox("")       
+        self.group_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed) 
+        self.every_slider = QSlider(Qt.Horizontal)
+        self.every_slider.setRange(1, 16)
+        self.every_slider.setValue(4)
+        self.every_slider.setTickInterval(1)
 
-#     canvas.pack()
-#     updateButton.pack()
-#     playButton.pack()
+        self.offset_slider = QSlider(Qt.Horizontal)
+        self.offset_slider.setRange(0, 16)
+        self.offset_slider.setValue(0)
+        self.offset_slider.setTickInterval(1)
 
-# def retreive_and_preview():
+        self.group_box_layout = QVBoxLayout()
+        self.every_label = QLabel("Place markers every x beats")
+        self.group_box_layout.addWidget(self.every_label)
+        self.group_box_layout.addWidget(self.every_slider)
 
-#     obtain_data_from_file()
-#     child_window_setup()
+        self.offset_label = QLabel("Offset first beat")
+        self.group_box_layout.addWidget(self.offset_label)
+        self.group_box_layout.addWidget(self.offset_slider)
 
-# def select_file():
-#     global data
-#     global beatsamples
-#     global newWindow
+        self.group_box.setLayout(self.group_box_layout)
 
-#     file_path = filedialog.askopenfilename(
-#         initialdir=os.path.expanduser("~"),
-#         title='Select an audio file',
-#         filetypes=[('Audio files', ['*.wav', '*.mp3', '*.flac', '*.ogg', '*.aiff']), ('All files', '.*')]
-#     )
+        self.left_v_layout = QVBoxLayout()
+        self.left_v_layout.addWidget(self.create_markers_button, 2)
+        self.left_v_layout.addWidget(self.remove_markers_button, 1)
+        self.left_v_layout.addWidget(self.group_box, 1)
 
-#     path.set(file_path) 
+        self.h_layout = QHBoxLayout()
+        self.h_layout.addLayout(self.left_v_layout, 1)
 
-#     thread = Thread(target=retreive_and_preview)
-#     thread.daemon = True
-#     thread.start()
-
-# def callback(in_data, frame_count, time_info, status):
-#     global playpos
-#     chunk = data[playpos:playpos+frame_count]
-#     playpos += frame_count
-#     if playpos >= SAMPLE_RATE*10:
-#         return (chunk, pyaudio.paComplete)
-#     return (chunk, pyaudio.paContinue)
-
-# def play_preview():
-#     global stream, iid
-#     stream = p.open(format=pyaudio.paFloat32, channels=1, rate=SAMPLE_RATE, output=True, stream_callback=callback)
-#     thread = Thread(target=track_line)
-#     thread.daemon = True
-#     thread.start()
-#     stream.start_stream()
-#     iid = newWindow.children["!canvas"].bind("<Button-1>", on_left_click)
+        self.setLayout(self.h_layout)
     
-# def on_left_click(event):
-#     if 100 <= event.y <= 300:
-#         playpos_param.set(event.x)
-#         changepos.set(True)
+    def add_preview(self, analyzer_data, beats, sample_rate):
+        self.data = analyzer_data.tolist()
+        self.beats = beats.tolist()
+        self.sample_rate = sample_rate
 
-# def track_line():
-#     global newWindow
-#     global playpos
-#     global stream
-#     if changepos.get():
-#         playpos = int(playpos_param.get()/999*SAMPLE_RATE*10)
-#         changepos.set(False)
-#     position = int(playpos*999/SAMPLE_RATE/10)
-#     newWindow.children["!canvas"].delete("line")
-#     newWindow.children["!canvas"].create_line(position, 120, position, 300, fill="red", tags="line")
-#     newWindow.update()
-#     if (stream.is_active()): newWindow.after(10, track_line)
-#     else: 
+        self.waveform_display = WaveformDisplay()
 
-#         stream.close()
-#         playpos = 0
-#         newWindow.children["!canvas"].delete("line")
-#         newWindow.children["!canvas"].unbind("<Button-1>", iid)
+        self.right_v_layout = QVBoxLayout()
+        self.right_v_layout.addWidget(self.waveform_display)
+        self.h_layout.addLayout(self.right_v_layout, 3)
 
-# def update_markers():
-#     global beatsamples
-#     global newWindow
+        self.global_offset_label = QLabel("Global offset")
+        self.left_global_offset_button = QPushButton("<<")
+        self.right_global_offset_button = QPushButton(">>")
+        self.global_offset_buttons_layout = QHBoxLayout()
+        self.global_offset_buttons_layout.addWidget(self.global_offset_label)
+        self.global_offset_buttons_layout.addWidget(self.left_global_offset_button)
+        self.global_offset_buttons_layout.addWidget(self.right_global_offset_button)
+        self.group_box_layout.addLayout(self.global_offset_buttons_layout)
 
-#     # Delete all markers from the canvas
-#     newWindow.update()
-#     canvas = newWindow.children["!canvas"]
-#     canvas.delete("marker")
+        self.zoom_box = QGroupBox("")
+        self.zoom_box_layout = QVBoxLayout()
+        self.zoom_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed) 
+        self.zoom_slider = QSlider(Qt.Horizontal)
+        self.zoom_slider.setRange(80, 99)
+        self.zoom_slider.setValue(99)
+        self.zoom_slider.setTickInterval(0.01)
+        self.zoom_box_layout.addWidget(QLabel("Zoom"))
+        self.zoom_box_layout.addWidget(self.zoom_slider)
 
-#     # Place markers from the first ten seconds as little rectangles on the canvas, beatsamples are in seconds
-#     # according to the new values from the sliders
-#     for beat in beatsamples[offsetvar.get()::everyvar.get()]:
-#         if beat < 10:
-#             canvas.create_rectangle((beat*100 - 8, 90, beat*100 + 8, 110), fill="green", tags="marker")
-#     newWindow.update()
+        self.scroll_slider = QSlider(Qt.Horizontal)
+        self.scroll_slider.setRange(0, len(self.data))
+        self.scroll_slider.setValue(0)
+        self.scroll_slider.setTickInterval(1)
+        self.zoom_box_layout.addWidget(QLabel("Scroll"))
+        self.zoom_box_layout.addWidget(self.scroll_slider)
 
-###########################################
-###########################################
-###########################################
-# MAIN WINDOW
-###########################################
-# newWindow = None
-# playpos = 0
-# p = pyaudio.PyAudio()
-# stream = None
-# custom_font = ""
+        self.zoom_box.setLayout(self.zoom_box_layout)
+        self.left_v_layout.addWidget(self.zoom_box)
 
-# if (is_afterfx_running()): aeApp = AE_JSInterface(returnFolder = TEMP_DIR)
-# else: aeApp = None
+        self.play_pause_button = QPushButton("Play")
+        self.play_pause_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.left_v_layout.addWidget(self.play_pause_button)
 
-# if (is_premiere_running()): prApp = PR_JSInterface(returnFolder = TEMP_DIR)
-# else: prApp = None
+        self.update_chart()
+        self.zoom_slider.valueChanged.connect(self.update_chart)
+        self.scroll_slider.valueChanged.connect(self.update_chart)
+        self.offset_slider.valueChanged.connect(self.update_chart)
+        self.every_slider.valueChanged.connect(self.update_chart)
 
-# root = tk.Tk()
-# root.title("AutoMarker")
+    def update_chart(self):
+        zoom = self.zoom_slider.value() / 100
+        scroll = self.scroll_slider.value() / len(self.data)
+        offset = self.offset_slider.value()
+        every = self.every_slider.value()
 
-# # Get the window width and height
-# window_width = root.winfo_reqwidth()
-# window_height = root.winfo_reqheight()
+        visible_data_length = int(len(self.data) * (1 - zoom))
+        start = int((len(self.data) - visible_data_length) * scroll)
+        end = start + visible_data_length
 
-# # Get the screen width and height
-# screen_width = root.winfo_screenwidth()
-# screen_height = root.winfo_screenheight()
+        beats_in_samples = [beat * self.sample_rate for beat in self.beats]
+        visible_beats = [beat - start for beat in beats_in_samples if start <= beat < end]
+        selected_beats = visible_beats[offset::every]
 
-# # Calculate the position of the left and top borders of the window
-# position_top = int(screen_height / 2 - window_height / 2)
-# position_right = int(screen_width / 2 - window_width / 2)
+        self.waveform_display.set_samples(self.data[start:end], selected_beats)
 
-# # Set the geometry of the window
-# root.geometry("+{}+{}".format(position_right, position_top))
+class WaveformDisplay(QWidget):
+    """Custom widget for waveform representation of a digital audio signal."""
 
-# style = ttk.Style()
-# style.theme_use(themename='xpnative')
+    def __init__(self, frames=None, channels=1, samplerate=SAMPLE_RATE, beats=None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._sampleframes = frames
+        self._beatsamples = beats
+        self._channels = channels
+        self._samplerate = samplerate
+        self.waveform_color = QColor('#B0B1B5') 
+        # ~ self.waveform_color = QtGui.QColor(255, 255, 255, 160)
+        self.background_color = QColor('#838487')
+        self.background_gradient = QLinearGradient()
+        self.background_gradient.setColorAt(0, QColor('black'))
+        self.background_gradient.setColorAt(1, QColor('#838487'))
+        self.background_gradient.setSpread(QGradient.Spread.ReflectSpread)
+        self.foreground_color = QColor('white')
+        self._zoom = 1.0
+        self._startframe = 0
+        self._endframe = -1
+        self.play_position = 0
 
-# mainframe = tk.Frame(root)
-# mainframe.grid(column=0, row=0, sticky=(tk.N, tk.W, tk.E, tk.S))
-# root.columnconfigure(0, weight=1)
-# root.rowconfigure(0, weight=1)
+    def paintEvent(self, event):
+        painter = QPainter()
+        painter.begin(self)
+        self.draw_waveform(painter)
+        self.draw_markers(painter)
+        self.draw_track_line(painter)
+        painter.end()
 
-# runvar = tk.StringVar()
-# path = tk.StringVar()
-# info = tk.StringVar()
-# everyvar = tk.IntVar(value=1)
-# offsetvar = tk.IntVar(value=0)
-# playpos_param = tk.IntVar(value=0)
-# changepos = tk.BooleanVar(value=False)
+    def draw_track_line(self, painter):
+        pen = painter.pen()
+        pen.setColor(QColor('#ED37A4'))  # Set the color for the track line
+        pen.setWidth(2)
+        painter.setPen(pen)
 
-# authorLabel = tk.Label(mainframe, text="by acrilique")
-# runvarLabel = tk.Label(mainframe, textvariable=runvar)
-# pathLabel = tk.Label(mainframe, textvariable=path)
-# infoLabel = tk.Label(mainframe, textvariable=info)
-# readmeButton = ttk.Button(mainframe, text="Readme", command=lambda: os.startfile(os.path.join(basedir, 'README.md')))
-# selectFileButton = ttk.Button(mainframe, text="Select audio file", command=select_file, width=40)
-# createMarkersButton = ttk.Button(mainframe, text="Create markers", command=auto_beat_marker, width=40)# , command=auto_beat_marker
-# removeMarkersButton = ttk.Button(mainframe, text="Remove markers", command=clear_all_markers, width=40)                                                                                                                                                                 
-# everyLabel = tk.Label(mainframe, text="Place markers every x beats")
-# everyScale = ttk.LabeledScale(mainframe, variable=everyvar, from_=1, to=16, compound='bottom')
-# offsetLabel = tk.Label(mainframe, text="Offset first beat")
-# offsetScale = ttk.LabeledScale(mainframe, variable=offsetvar, from_=0, to=16, compound='bottom')
-# versionLabel = tk.Label(mainframe, text="v0.3.3")
+        width = painter.device().width()
+        x = self.play_position * width / len(self._sampleframes)
+        painter.drawLine(QPointF(x, 0), QPointF(x, painter.device().height()))
 
-# everyScale.update()
-# offsetScale.update()
+    def update_play_position(self, play_position):
+        self.play_position = play_position
+        self.update()
 
-# authorLabel.grid(column=1, row=0, sticky=(tk.W))
-# readmeButton.grid(column=1, row=0, sticky=(tk.E))
-# pathLabel.grid(column=1, row=1, sticky=(tk.W, tk.E))
-# selectFileButton.grid(column=1, row=2, sticky=(tk.W, tk.E))
-# createMarkersButton.grid(column=1, row=3, sticky=(tk.W, tk.E))
-# removeMarkersButton.grid(column=1, row=4, sticky=(tk.W, tk.E))
-# everyLabel.grid(column=1, row=5, sticky=(tk.W))
-# everyScale.grid(column=1, row=6, sticky=(tk.W, tk.E))
-# offsetLabel.grid(column=1, row=7, sticky=(tk.W))
-# offsetScale.grid(column=1, row=8, sticky=(tk.W, tk.E))
-# runvarLabel.grid(column=1, row=9, sticky=(tk.W))
-# infoLabel.grid(column=1,row=9, sticky=(tk.E))
-# versionLabel.grid(column=1, row=10, sticky=(tk.E))
+    def draw_markers(self, painter):
+        pen = painter.pen()
+        pen.setColor(QColor('#254E5C'))  # Set the color for the markers
+        pen.setWidth(3)
+        painter.setPen(pen)
 
+        width = painter.device().width()
+        visible_samples = len(self._sampleframes[self._startframe:self._endframe])
 
-# for child in mainframe.winfo_children(): 
-#     child.grid_configure(padx=5, pady=5)
+        for beat in self._beatsamples:
+            # Subtract the start frame index from the beat sample index
+            beat -= self._startframe
+            x = beat * width / visible_samples
+            painter.drawLine(QPointF(x, 0), QPointF(x, painter.device().height()))
 
-# icon = tk.PhotoImage(file=os.path.join(basedir, "icon.png"))
-# root.tk.call('wm', 'iconphoto', root._w, icon)
-# root.after(0, update_runvar)
+    def draw_waveform(self, painter):
+        pen = painter.pen()
+        pen.setColor("#88BDA6")  
+        height = painter.device().height()
+        zero_y = float(height) / 2
+        width = painter.device().width()
+        num_frames = len(self._sampleframes[self._startframe:self._endframe])
+        samples_per_pixel = num_frames / float(width)
 
-# root.mainloop()
+        # draw background
+        # ~ brush = QtGui.QBrush()
+        # ~ brush.setColor(self.background_color)
+        # ~ brush.setStyle(Qt.BrushStyle.SolidPattern)
+        self.background_gradient.setStart(0.0, zero_y)
+        self.background_gradient.setFinalStop(0.0, 0.0)
+        rect = QRect(0, 0, width, height)
+        painter.fillRect(rect, self.background_gradient)
+        startframe = self._startframe
 
+        # draw waveform
+        if self._sampleframes is not None:
+            pen.setColor(self.waveform_color)
+            painter.setPen(pen)
+            for pixel in range(width):
+                offset = round(pixel * samples_per_pixel)
+
+                if 0 <= offset < num_frames:
+                    start = startframe + offset
+                    end = max(start + 1, start + int(samples_per_pixel))
+                    values = self._sampleframes[start:end]
+                    max_value = max(values)
+                    min_value = min(values)
+
+                    if max_value > 0:
+                        y = zero_y - zero_y * max_value
+                        painter.drawLine(QLineF(pixel, zero_y, pixel, y))
+                    if min_value < 0:
+                        y = zero_y - zero_y * min_value
+                        painter.drawLine(QLineF(pixel, zero_y, pixel, y))
+
+        # draw zero line
+        pen.setColor(self.foreground_color)
+        pen.setStyle(Qt.PenStyle.DotLine)
+        painter.setPen(pen)
+        painter.drawLine(QLineF(0.0, zero_y, float(width), zero_y))
+
+    def set_samples(self, frames, beats, channels=1, samplerate=SAMPLE_RATE):
+        self._sampleframes = frames if frames is not None else []
+        self._beatsamples = beats
+        self._channels = channels
+        self._samplerate = samplerate
+        self.update()
+
+class StatusChecker(QThread):
+    statusChanged = Signal(str)
+
+    def run(self):
+        while True:
+            if is_premiere_running()[0]:
+                self.statusChanged.emit("1")
+            elif is_afterfx_running()[0]:
+                self.statusChanged.emit("2")
+            elif is_resolve_running()[0]:
+                self.statusChanged.emit("3")
+            else:
+                self.statusChanged.emit("0")
+            time.sleep(1)
+class AddMarkersThread(QThread):
+
+    finished = Signal()
+
+    def __init__(self, app, beatsamples, every=1, offset=0):
+        super().__init__()
+        self.app = app
+        self.beatsamples = beatsamples
+        self.every = every
+        self.offset = offset
+
+    def run(self):
+        if self.app is not None:
+            markers = self.beatsamples.tolist()[self.offset::self.every]
+            self.app.addMarkers(markers)
+
+class RemoveMarkersThread(QThread):
+
+    finished = Signal()
+
+    def __init__(self, app):
+        super().__init__()
+        self.app = app
+
+    def run(self):
+        if self.app is not None:
+            self.app.clearAllMarkers()
+class Analyzer(QThread):
+
+    finished = Signal()
+
+    def __init__(self, path, parent=None):
+        super().__init__(parent)
+        self.path = path
+
+    def run(self):
+        self.data, self.samplerate = librosa.load(path=self.path, sr=SAMPLE_RATE, mono=True)
+        self.tempo, self.beatsamples = librosa.beat.beat_track(y=self.data, units="time", sr=SAMPLE_RATE)
 class MainWindow(QMainWindow):
     def __init__(self, app):
         super().__init__()
         self.app = app
         self.setWindowTitle("AutoMarker")
-
+        self.setWindowIcon(QIcon(os.path.join(basedir, "icon.png")))
+        self.resize(260, 240)
+        self.setStyleSheet("""
+                           QMainWindow {
+                                background-color: #838487;
+                           } 
+                           QGroupBox { 
+                                border: 1px solid gray; 
+                                border-radius: 7px;
+                           }
+                           """)
         menu_bar = self.menuBar()
         file_menu = menu_bar.addMenu("File")
         help_menu = menu_bar.addMenu("Help")
@@ -880,6 +869,57 @@ class MainWindow(QMainWindow):
 
         status_bar = self.statusBar()
         status_bar.showMessage("Ready")
+        self.app_status_label = QLabel("")
+        status_bar.addPermanentWidget(self.app_status_label)
+
+        self.status_checker = StatusChecker()
+        self.status_checker.statusChanged.connect(self.update_app_status)
+        self.status_checker.start()
+
+        self.widget_layout = Layout()
+        self.widget_layout.layout()
+        self.setCentralWidget(self.widget_layout)
+        # Connect the signals
+        self.widget_layout.create_markers_button.clicked.connect(self.add_markers)
+        self.widget_layout.remove_markers_button.clicked.connect(self.remove_markers)
+
+    def negative_global_offset(self):
+        # reduces all beat values (which are in seconds) by 0.1
+        self.analyzer.beatsamples -= 0.01
+        self.widget_layout.beats = self.analyzer.beatsamples.tolist()
+        self.widget_layout.update_chart()
+    
+    def positive_global_offset(self):
+        # increases all beat values (which are in seconds) by 0.1
+        self.analyzer.beatsamples += 0.01
+        self.widget_layout.beats = self.analyzer.beatsamples.tolist()
+        self.widget_layout.update_chart()
+
+    def add_markers(self):
+        self.statusBar().showMessage("Placing markers...")
+        self.add_markers_thread = AddMarkersThread(self.current_app, self.analyzer.beatsamples, self.widget_layout.every_slider.value(), self.widget_layout.offset_slider.value())
+        self.add_markers_thread.start()
+        self.add_markers_thread.finished.connect(lambda: self.statusBar().showMessage("Done!"))
+
+    def remove_markers(self):
+        self.statusBar().showMessage("Removing markers...")
+        self.remove_markers_thread = RemoveMarkersThread(self.current_app)
+        self.remove_markers_thread.start()
+        self.remove_markers_thread.finished.connect(lambda: self.statusBar().showMessage("Done!"))
+
+    def update_app_status(self, status):
+        if (status == "0"):
+            self.app_status_label.setText("App isn't running...")
+            self.current_app = None
+        elif (status == "1"):
+            self.current_app = PR_JSInterface()
+            self.app_status_label.setText("Premiere Pro is running!")
+        elif (status == "2"):
+            self.current_app = AE_JSInterface()
+            self.app_status_label.setText("After Effects is running!")
+        elif (status == "3"):
+            self.current_app = Resolve_Interface()
+            self.app_status_label.setText("Resolve is running!")
 
     def select_file(self):
         self.statusBar().showMessage("Selecting file...")
@@ -887,7 +927,69 @@ class MainWindow(QMainWindow):
         if file_path:
             self.path = file_path
             self.retreive_and_preview()
+        else:
+            self.statusBar().showMessage("No file was selected! Try again.")
 
+    def retreive_and_preview(self):
+        self.statusBar().showMessage("Reading file from source...")
+        self.analyzer = Analyzer(self.path)
+        self.analyzer.finished.connect(self.preview)
+        self.analyzer.start()
+    
+    def preview(self):
+        self.resize(1000, 500)
+        self.statusBar().showMessage("Displaying preview...")
+        self.widget_layout.add_preview(self.analyzer.data, self.analyzer.beatsamples, self.analyzer.samplerate)
+        self.widget_layout.play_pause_button.clicked.connect(self.start_stop_playback)
+        self.widget_layout.left_global_offset_button.clicked.connect(self.negative_global_offset)
+        self.widget_layout.right_global_offset_button.clicked.connect(self.positive_global_offset)
+
+    def start_stop_playback(self):
+        if self.widget_layout is not None:
+            self.data = self.analyzer.data
+            if self.widget_layout.play_pause_button.text() == "Play":
+                
+                self.widget_layout.play_pause_button.setText("Pause")
+                self.start_audio_playback()
+            else:
+                self.widget_layout.play_pause_button.setText("Play")
+                self.stop_audio_playback()
+
+    def start_audio_playback(self):
+        self.p = pyaudio.PyAudio()
+        self.stream = self.p.open(format=pyaudio.paFloat32,
+                                  channels=1,
+                                  rate=self.analyzer.samplerate,
+                                  output=True,
+                                  stream_callback=self.callback)
+        self.stream.start_stream()
+
+    def stop_audio_playback(self):
+        self.stream.stop_stream()
+        self.stream.close()
+        self.p.terminate()
+
+    def callback(self, in_data, frame_count, time_info, status):
+        data = self.data[:frame_count]
+        self.data = self.data[frame_count:]
+        
+        # Calculate the current play position based on the number of frames that have been played
+        current_play_position = len(self.analyzer.data) - len(self.data)
+        
+        # Get the current zoom and scroll values
+        zoom = self.widget_layout.zoom_slider.value() / 100
+        scroll = self.widget_layout.scroll_slider.value() / len(self.data)
+        
+        # Adjust the play position based on the zoom and scroll values
+        visible_data_length = int(len(self.data) * (1 - zoom))
+        start = int((len(self.data) - visible_data_length) * scroll)
+        adjusted_play_position = current_play_position - start
+        
+        # Update the play position of the waveform_display widget
+        self.widget_layout.waveform_display.update_play_position(adjusted_play_position)
+        
+        return (data.tobytes(), pyaudio.paContinue)
+        
 app = QApplication(sys.argv)
 window = MainWindow(app)
 window.show()

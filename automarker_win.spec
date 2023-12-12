@@ -13,7 +13,7 @@ added_files = [
          ]
 
 a = Analysis(
-    ['automarker.py'],
+    ['automarkerQt.py'],
     pathex=[],
     binaries=[],
     datas=added_files,
@@ -45,7 +45,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='icon.ico',
+    icon='icon.png',
 )
 coll = COLLECT(
     exe,
