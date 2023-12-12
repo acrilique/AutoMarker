@@ -637,7 +637,7 @@ class Layout(QWidget):
         self.zoom_slider = QSlider(Qt.Horizontal)
         self.zoom_slider.setRange(80, 99)
         self.zoom_slider.setValue(99)
-        self.zoom_slider.setTickInterval(0.01)
+        self.zoom_slider.setTickInterval(1)
         self.zoom_box_layout.addWidget(QLabel("Zoom"))
         self.zoom_box_layout.addWidget(self.zoom_slider)
 
@@ -660,6 +660,22 @@ class Layout(QWidget):
         self.scroll_slider.valueChanged.connect(self.update_chart)
         self.offset_slider.valueChanged.connect(self.update_chart)
         self.every_slider.valueChanged.connect(self.update_chart)
+        self.waveform_display.zoom_signal.connect(self.handle_zoom_signal)
+        self.waveform_display.scroll_signal.connect(self.handle_scroll_signal)
+
+    def handle_zoom_signal(self, delta):
+        if int(delta) > 0:
+            self.zoom_slider.setValue(self.zoom_slider.value() + 1)
+        else:
+            self.zoom_slider.setValue(self.zoom_slider.value() - 1)
+        self.update_chart()
+
+    def handle_scroll_signal(self, delta):
+        if int(delta) > 0:
+            self.scroll_slider.setValue(self.scroll_slider.value() + 1)
+        else:
+            self.scroll_slider.setValue(self.scroll_slider.value() - 1)
+        self.update_chart()
 
     def update_chart(self):
         zoom = self.zoom_slider.value() / 100
@@ -679,7 +695,8 @@ class Layout(QWidget):
 
 class WaveformDisplay(QWidget):
     """Custom widget for waveform representation of a digital audio signal."""
-
+    zoom_signal = Signal(int)
+    scroll_signal = Signal(int)
     def __init__(self, frames=None, channels=1, samplerate=SAMPLE_RATE, beats=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._sampleframes = frames
@@ -698,6 +715,14 @@ class WaveformDisplay(QWidget):
         self._startframe = 0
         self._endframe = -1
         self.play_position = 0
+
+    def wheelEvent(self, event):
+        deltay = event.angleDelta().y()
+        deltax = event.angleDelta().x()
+        if deltay != 0:
+            self.zoom_signal.emit(deltay)
+        if deltax != 0:
+            self.scroll_signal.emit(deltax)
 
     def paintEvent(self, event):
         painter = QPainter()
