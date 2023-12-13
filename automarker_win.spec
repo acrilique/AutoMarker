@@ -9,7 +9,8 @@ added_files = [
          ('extension_installer_win.bat', '.'),
          ('README.md', '.'),
          ('AutoMarker.zxp', '.'),
-         ('DaVinciResolveScript.py', '.')
+         ('DaVinciResolveScript.py', '.'),
+         ('WorkSans.ttf','.')
          ]
 
 a = Analysis(

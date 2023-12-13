@@ -1,13 +1,12 @@
 # AutoMarker by acrilique.
 # This script is a Qt version of the original automarker.py script by acrilique.
 from PySide6.QtCore import QThread, Signal, Qt, QRect, QLineF, QPointF
-from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QSlider, QPushButton, QLabel, QHBoxLayout, QVBoxLayout, QSizePolicy, QGroupBox, QWidget
-from PySide6.QtGui import QIcon, QPainter, QColor, QLinearGradient, QGradient
+from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QSlider, QPushButton, QLabel, QTextEdit, QScrollBar, QHBoxLayout, QVBoxLayout, QSizePolicy, QGroupBox, QWidget
+from PySide6.QtGui import QIcon, QPainter, QColor, QLinearGradient, QGradient, QFontDatabase, QFont
 import librosa
 import pyaudio
 import requests
 import os
-import numpy
 import sys
 import re
 import json
@@ -95,7 +94,7 @@ SAMPLE_RATE = 44100
 ###########################################
 ###########################################
 # FUNCTIONS TO CHECK FOR RUNNING APPS AND LOOK PATHS TO EXECUTABLES
-# - They are self-explanatory, and their purpose is to create an easy and multiplatform access to this functionality.
+# - Their purpose is to create an easy and multiplatform access to this functionality.
 ###########################################
 def is_premiere_running():
     """
@@ -591,12 +590,25 @@ class Layout(QWidget):
         self.offset_slider.setTickInterval(1)
 
         self.group_box_layout = QVBoxLayout()
+
+        self.every_h_box_layout = QHBoxLayout()
         self.every_label = QLabel("Place markers every x beats")
-        self.group_box_layout.addWidget(self.every_label)
+        self.every_text = QTextEdit("4")
+        self.every_text.setMaximumHeight(24)
+        self.every_text.setMaximumWidth(50)
+        self.every_h_box_layout.addWidget(self.every_label)
+        self.every_h_box_layout.addWidget(self.every_text)
+        self.group_box_layout.addLayout(self.every_h_box_layout)
         self.group_box_layout.addWidget(self.every_slider)
 
+        self.offset_h_box_layout = QHBoxLayout()
         self.offset_label = QLabel("Offset first beat")
-        self.group_box_layout.addWidget(self.offset_label)
+        self.offset_text = QTextEdit("0")
+        self.offset_text.setMaximumHeight(24)
+        self.offset_text.setMaximumWidth(50)
+        self.offset_h_box_layout.addWidget(self.offset_label)
+        self.offset_h_box_layout.addWidget(self.offset_text)
+        self.group_box_layout.addLayout(self.offset_h_box_layout)
         self.group_box_layout.addWidget(self.offset_slider)
 
         self.group_box.setLayout(self.group_box_layout)
@@ -617,9 +629,19 @@ class Layout(QWidget):
         self.sample_rate = sample_rate
 
         self.waveform_display = WaveformDisplay()
+        self.position_slider = QSlider(Qt.Horizontal)
+        self.position_slider.setRange(0, len(self.data))
+        self.position_slider.setValue(0)
 
         self.right_v_layout = QVBoxLayout()
+        self.right_v_layout.addWidget(self.position_slider)
         self.right_v_layout.addWidget(self.waveform_display)
+
+        self.scroll_bar = QScrollBar(Qt.Horizontal)
+        self.scroll_bar.setRange(0, len(self.data))
+        self.scroll_bar.setValue(0)
+        self.right_v_layout.addWidget(self.scroll_bar)
+
         self.h_layout.addLayout(self.right_v_layout, 3)
 
         self.global_offset_label = QLabel("Global offset")
@@ -631,25 +653,13 @@ class Layout(QWidget):
         self.global_offset_buttons_layout.addWidget(self.right_global_offset_button)
         self.group_box_layout.addLayout(self.global_offset_buttons_layout)
 
-        self.zoom_box = QGroupBox("")
-        self.zoom_box_layout = QVBoxLayout()
-        self.zoom_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed) 
         self.zoom_slider = QSlider(Qt.Horizontal)
         self.zoom_slider.setRange(80, 99)
         self.zoom_slider.setValue(99)
         self.zoom_slider.setTickInterval(1)
-        self.zoom_box_layout.addWidget(QLabel("Zoom"))
-        self.zoom_box_layout.addWidget(self.zoom_slider)
 
-        self.scroll_slider = QSlider(Qt.Horizontal)
-        self.scroll_slider.setRange(0, len(self.data))
-        self.scroll_slider.setValue(0)
-        self.scroll_slider.setTickInterval(1)
-        self.zoom_box_layout.addWidget(QLabel("Scroll"))
-        self.zoom_box_layout.addWidget(self.scroll_slider)
-
-        self.zoom_box.setLayout(self.zoom_box_layout)
-        self.left_v_layout.addWidget(self.zoom_box)
+        self.center_button = QPushButton("Center")
+        self.left_v_layout.addWidget(self.center_button)
 
         self.play_pause_button = QPushButton("Play")
         self.play_pause_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -657,7 +667,7 @@ class Layout(QWidget):
 
         self.update_chart()
         self.zoom_slider.valueChanged.connect(self.update_chart)
-        self.scroll_slider.valueChanged.connect(self.update_chart)
+        self.scroll_bar.valueChanged.connect(self.update_chart)
         self.offset_slider.valueChanged.connect(self.update_chart)
         self.every_slider.valueChanged.connect(self.update_chart)
         self.waveform_display.zoom_signal.connect(self.handle_zoom_signal)
@@ -672,24 +682,25 @@ class Layout(QWidget):
 
     def handle_scroll_signal(self, delta):
         if int(delta) > 0:
-            self.scroll_slider.setValue(self.scroll_slider.value() + 1)
+            self.scroll_bar.setValue(self.scroll_bar.value() + 1)
         else:
-            self.scroll_slider.setValue(self.scroll_slider.value() - 1)
+            self.scroll_bar.setValue(self.scroll_bar.value() - 1)
         self.update_chart()
 
     def update_chart(self):
         zoom = self.zoom_slider.value() / 100
-        scroll = self.scroll_slider.value() / len(self.data)
+        scroll = self.scroll_bar.value() / len(self.data)
         offset = self.offset_slider.value()
         every = self.every_slider.value()
+        beats = self.beats[offset::every]
 
         visible_data_length = int(len(self.data) * (1 - zoom))
         start = int((len(self.data) - visible_data_length) * scroll)
         end = start + visible_data_length
 
-        beats_in_samples = [beat * self.sample_rate for beat in self.beats]
+        beats_in_samples = [beat * self.sample_rate for beat in beats]
         visible_beats = [beat - start for beat in beats_in_samples if start <= beat < end]
-        selected_beats = visible_beats[offset::every]
+        selected_beats = visible_beats
 
         self.waveform_display.set_samples(self.data[start:end], selected_beats)
 
@@ -703,12 +714,12 @@ class WaveformDisplay(QWidget):
         self._beatsamples = beats
         self._channels = channels
         self._samplerate = samplerate
-        self.waveform_color = QColor('#B0B1B5') 
+        self.waveform_color = QColor('#9EB3FF') 
         # ~ self.waveform_color = QtGui.QColor(255, 255, 255, 160)
-        self.background_color = QColor('#838487')
+        self.background_color = QColor('#8B9DE0')
         self.background_gradient = QLinearGradient()
         self.background_gradient.setColorAt(0, QColor('black'))
-        self.background_gradient.setColorAt(1, QColor('#838487'))
+        self.background_gradient.setColorAt(1, QColor('#8B9DE0'))
         self.background_gradient.setSpread(QGradient.Spread.ReflectSpread)
         self.foreground_color = QColor('white')
         self._zoom = 1.0
@@ -729,7 +740,7 @@ class WaveformDisplay(QWidget):
         painter.begin(self)
         self.draw_waveform(painter)
         self.draw_markers(painter)
-        self.draw_track_line(painter)
+        if is_playing == True: self.draw_track_line(painter) 
         painter.end()
 
     def draw_track_line(self, painter):
@@ -870,16 +881,23 @@ class MainWindow(QMainWindow):
     def __init__(self, app):
         super().__init__()
         self.app = app
+        QFontDatabase.addApplicationFont(os.path.join(basedir, "WorkSans.ttf"))
         self.setWindowTitle("AutoMarker")
         self.setWindowIcon(QIcon(os.path.join(basedir, "icon.png")))
         self.resize(260, 240)
         self.setStyleSheet("""
                            QMainWindow {
-                                background-color: #838487;
+                                background-color: #8B9DE0;
                            } 
                            QGroupBox { 
                                 border: 1px solid gray; 
                                 border-radius: 7px;
+                           }
+                           QLabel {
+                                color: black;
+                           }
+                           QStatusBar {
+                                color: black;
                            }
                            """)
         menu_bar = self.menuBar()
@@ -907,6 +925,25 @@ class MainWindow(QMainWindow):
         # Connect the signals
         self.widget_layout.create_markers_button.clicked.connect(self.add_markers)
         self.widget_layout.remove_markers_button.clicked.connect(self.remove_markers)
+        self.widget_layout.every_text.textChanged.connect(self.every_text_handler)
+        self.widget_layout.offset_text.textChanged.connect(self.offset_text_handler)
+        self.widget_layout.every_slider.valueChanged.connect(lambda: self.widget_layout.every_text.setText(str(self.widget_layout.every_slider.value())))
+        self.widget_layout.offset_slider.valueChanged.connect(lambda: self.widget_layout.offset_text.setText(str(self.widget_layout.offset_slider.value())))
+        self.data = None
+
+    def every_text_handler(self):
+        try:
+            value = int(self.widget_layout.every_text.toPlainText())
+        except ValueError:
+            value = 1
+        self.widget_layout.every_slider.setValue(value)
+
+    def offset_text_handler(self):
+        try:
+            value = int(self.widget_layout.offset_text.toPlainText())
+        except ValueError:
+            value = 0
+        self.widget_layout.offset_slider.setValue(value)
 
     def negative_global_offset(self):
         # reduces all beat values (which are in seconds) by 0.1
@@ -968,17 +1005,29 @@ class MainWindow(QMainWindow):
         self.widget_layout.play_pause_button.clicked.connect(self.start_stop_playback)
         self.widget_layout.left_global_offset_button.clicked.connect(self.negative_global_offset)
         self.widget_layout.right_global_offset_button.clicked.connect(self.positive_global_offset)
+        self.widget_layout.center_button.clicked.connect(self.center_view_on_track_line)
+        self.widget_layout.position_slider.valueChanged.connect(self.manually_set_play_position)
+        self.statusBar().showMessage("Ready")
+
+    def manually_set_play_position(self, value):
+        self.data = self.analyzer.data[value:]
+
+    def center_view_on_track_line(self):
+        self.widget_layout.scroll_bar.setValue(len(self.analyzer.data) - len(self.data) + 1/((self.widget_layout.zoom_slider.value() - 80+0.001) / 19) * 1000)
+        self.widget_layout.update_chart()
 
     def start_stop_playback(self):
+        global is_playing
         if self.widget_layout is not None:
-            self.data = self.analyzer.data
+            if self.data is None: self.data = self.analyzer.data
             if self.widget_layout.play_pause_button.text() == "Play":
-                
                 self.widget_layout.play_pause_button.setText("Pause")
                 self.start_audio_playback()
+                is_playing = True
             else:
                 self.widget_layout.play_pause_button.setText("Play")
                 self.stop_audio_playback()
+                is_playing = False
 
     def start_audio_playback(self):
         self.p = pyaudio.PyAudio()
@@ -998,13 +1047,15 @@ class MainWindow(QMainWindow):
         data = self.data[:frame_count]
         self.data = self.data[frame_count:]
         
+        self.widget_layout.position_slider.setValue(len(self.analyzer.data) - len(self.data))
         # Calculate the current play position based on the number of frames that have been played
         current_play_position = len(self.analyzer.data) - len(self.data)
         
         # Get the current zoom and scroll values
         zoom = self.widget_layout.zoom_slider.value() / 100
-        scroll = self.widget_layout.scroll_slider.value() / len(self.data)
-        
+        scroll_bar = self.widget_layout.scroll_bar
+        scroll = scroll_bar.value() / len(self.data) if len(self.data) > 0 else len(self.data)-1
+
         # Adjust the play position based on the zoom and scroll values
         visible_data_length = int(len(self.data) * (1 - zoom))
         start = int((len(self.data) - visible_data_length) * scroll)
@@ -1012,10 +1063,19 @@ class MainWindow(QMainWindow):
         
         # Update the play position of the waveform_display widget
         self.widget_layout.waveform_display.update_play_position(adjusted_play_position)
+        #and if the play position is inside the visible area
+        coeff = (2 * (-len(self.data)/len(self.analyzer.data) + 1) + 1)
+        if zoom == 99/100 and current_play_position > start + visible_data_length / 3 and current_play_position < start + visible_data_length*coeff*5:
+            scroll_bar.setValue(scroll_bar.value() + frame_count + coeff*5) 
         
         return (data.tobytes(), pyaudio.paContinue)
-        
+
+is_playing = False
 app = QApplication(sys.argv)
+
+font = QFont("Work Sans", 9)
+app.setFont(font)
+
 window = MainWindow(app)
 window.show()
 app.exec()
