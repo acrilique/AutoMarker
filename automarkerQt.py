@@ -1,6 +1,6 @@
 # AutoMarker by acrilique.
 # This script is a Qt version of the original automarker.py script by acrilique.
-from PySide6.QtCore import QThread, Signal, Qt, QRect, QLineF, QPointF
+from PySide6.QtCore import QThread, Signal, Qt, QRect, QLineF, QPointF, QSize, QTimer
 from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QSlider, QPushButton, QLabel, QTextEdit, QScrollBar, QHBoxLayout, QVBoxLayout, QSizePolicy, QGroupBox, QWidget
 from PySide6.QtGui import QIcon, QPainter, QColor, QLinearGradient, QGradient, QFontDatabase, QFont
 import librosa
@@ -629,6 +629,9 @@ class Layout(QWidget):
         self.sample_rate = sample_rate
 
         self.waveform_display = WaveformDisplay()
+        self.waveform_display.set_samples(self.data, self.beats, channels=1, samplerate=self.sample_rate)
+        self.waveform_display.sizePolicy().setVerticalPolicy(QSizePolicy.Expanding)
+
         self.position_slider = QSlider(Qt.Horizontal)
         self.position_slider.setRange(0, len(self.data))
         self.position_slider.setValue(0)
@@ -658,55 +661,17 @@ class Layout(QWidget):
         self.zoom_slider.setValue(99)
         self.zoom_slider.setTickInterval(1)
 
-        self.center_button = QPushButton("Center")
-        self.left_v_layout.addWidget(self.center_button)
+        self.follow_line_button = QPushButton("Follow line")
+        self.follow_line_button.setCheckable(True)
+        self.left_v_layout.addWidget(self.follow_line_button)
 
         self.play_pause_button = QPushButton("Play")
         self.play_pause_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.left_v_layout.addWidget(self.play_pause_button)
 
-        self.update_chart()
-        self.zoom_slider.valueChanged.connect(self.update_chart)
-        self.scroll_bar.valueChanged.connect(self.update_chart)
-        self.offset_slider.valueChanged.connect(self.update_chart)
-        self.every_slider.valueChanged.connect(self.update_chart)
-        self.waveform_display.zoom_signal.connect(self.handle_zoom_signal)
-        self.waveform_display.scroll_signal.connect(self.handle_scroll_signal)
-
-    def handle_zoom_signal(self, delta):
-        if int(delta) > 0:
-            self.zoom_slider.setValue(self.zoom_slider.value() + 1)
-        else:
-            self.zoom_slider.setValue(self.zoom_slider.value() - 1)
-        self.update_chart()
-
-    def handle_scroll_signal(self, delta):
-        if int(delta) > 0:
-            self.scroll_bar.setValue(self.scroll_bar.value() + 1)
-        else:
-            self.scroll_bar.setValue(self.scroll_bar.value() - 1)
-        self.update_chart()
-
-    def update_chart(self):
-        zoom = self.zoom_slider.value() / 100
-        scroll = self.scroll_bar.value() / len(self.data)
-        offset = self.offset_slider.value()
-        every = self.every_slider.value()
-        beats = self.beats[offset::every]
-
-        visible_data_length = int(len(self.data) * (1 - zoom))
-        start = int((len(self.data) - visible_data_length) * scroll)
-        end = start + visible_data_length
-
-        beats_in_samples = [beat * self.sample_rate for beat in beats]
-        visible_beats = [beat - start for beat in beats_in_samples if start <= beat < end]
-        selected_beats = visible_beats
-
-        self.waveform_display.set_samples(self.data[start:end], selected_beats)
-
 class WaveformDisplay(QWidget):
     """Custom widget for waveform representation of a digital audio signal."""
-    zoom_signal = Signal(int)
+    zoom_signal = Signal(int, int)
     scroll_signal = Signal(int)
     def __init__(self, frames=None, channels=1, samplerate=SAMPLE_RATE, beats=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -722,16 +687,23 @@ class WaveformDisplay(QWidget):
         self.background_gradient.setColorAt(1, QColor('#8B9DE0'))
         self.background_gradient.setSpread(QGradient.Spread.ReflectSpread)
         self.foreground_color = QColor('white')
-        self._zoom = 1.0
         self._startframe = 0
-        self._endframe = -1
-        self.play_position = 0
+        self._endframe = self._samplerate*10
+        self.track_line_position = 0
+
+    def sizeHint(self) -> QSize:
+        return QSize(400, 200)
 
     def wheelEvent(self, event):
         deltay = event.angleDelta().y()
         deltax = event.angleDelta().x()
+        if (self._endframe - self._startframe) < SAMPLE_RATE / 8:
+            self._endframe = self._startframe + SAMPLE_RATE / 8
+        elif (self._endframe - self._startframe) > SAMPLE_RATE * 60:
+            self._endframe = self._startframe + SAMPLE_RATE * 60
         if deltay != 0:
-            self.zoom_signal.emit(deltay)
+            pos = int(event.position().x() / self.width() * ((self._endframe - self._startframe) + self._startframe))
+            self.zoom_signal.emit(deltay, pos)
         if deltax != 0:
             self.scroll_signal.emit(deltax)
 
@@ -744,18 +716,17 @@ class WaveformDisplay(QWidget):
         painter.end()
 
     def draw_track_line(self, painter):
-        pen = painter.pen()
-        pen.setColor(QColor('#ED37A4'))  # Set the color for the track line
-        pen.setWidth(2)
-        painter.setPen(pen)
+        if self.track_line_position < self._endframe and self.track_line_position > self._startframe:
+            pen = painter.pen()
+            pen.setColor(QColor('#ED37A4'))  # Set the color for the track line
+            pen.setWidth(2)
+            painter.setPen(pen)
+            width = painter.device().width()
+            x = (self.track_line_position - self._startframe) * width / (self._endframe - self._startframe)
+            painter.drawLine(QPointF(x, 0), QPointF(x, painter.device().height()))
 
-        width = painter.device().width()
-        x = self.play_position * width / len(self._sampleframes)
-        painter.drawLine(QPointF(x, 0), QPointF(x, painter.device().height()))
-
-    def update_play_position(self, play_position):
-        self.play_position = play_position
-        self.update()
+    def update_track_line_position(self, position):
+        self.track_line_position = position
 
     def draw_markers(self, painter):
         pen = painter.pen()
@@ -765,6 +736,7 @@ class WaveformDisplay(QWidget):
 
         width = painter.device().width()
         visible_samples = len(self._sampleframes[self._startframe:self._endframe])
+        visible_samples = visible_samples if visible_samples > 0 else 1
 
         for beat in self._beatsamples:
             # Subtract the start frame index from the beat sample index
@@ -878,6 +850,7 @@ class Analyzer(QThread):
         self.data, self.samplerate = librosa.load(path=self.path, sr=SAMPLE_RATE, mono=True)
         self.tempo, self.beatsamples = librosa.beat.beat_track(y=self.data, units="time", sr=SAMPLE_RATE)
 class MainWindow(QMainWindow):
+
     def __init__(self, app):
         super().__init__()
         self.app = app
@@ -1005,29 +978,96 @@ class MainWindow(QMainWindow):
         self.widget_layout.play_pause_button.clicked.connect(self.start_stop_playback)
         self.widget_layout.left_global_offset_button.clicked.connect(self.negative_global_offset)
         self.widget_layout.right_global_offset_button.clicked.connect(self.positive_global_offset)
-        self.widget_layout.center_button.clicked.connect(self.center_view_on_track_line)
         self.widget_layout.position_slider.valueChanged.connect(self.manually_set_play_position)
+        self.widget_layout.waveform_display.zoom_signal.connect(self.handle_zoom_signal)
+        self.widget_layout.scroll_bar.valueChanged.connect(self.handle_scroll_bar_signal)
         self.statusBar().showMessage("Ready")
+
+    def handle_scroll_bar_signal(self, value):
+        # Get the current start and end frames
+        startframe = self.widget_layout.waveform_display._startframe
+        endframe = self.widget_layout.waveform_display._endframe
+
+        # Calculate the new start and end frames
+        new_startframe = value
+        new_endframe = new_startframe + (endframe - startframe)
+
+        # Check if new_endframe exceeds the data length
+        if new_endframe > len(self.analyzer.data):
+            # Adjust new_startframe to maintain the same range
+            new_startframe -= new_endframe - len(self.analyzer.data)
+            new_endframe = len(self.analyzer.data)
+
+        # Update the start and end frames
+        self.widget_layout.waveform_display._startframe = max(0, int(new_startframe))
+        self.widget_layout.waveform_display._endframe = min(len(self.analyzer.data), int(new_endframe))
+        self.widget_layout.waveform_display.update()
+        
+    def handle_zoom_signal(self, deltay, pos):
+        # Get the current start and end frames
+        startframe = self.widget_layout.waveform_display._startframe
+        endframe = self.widget_layout.waveform_display._endframe
+
+        # Calculate the zoom factor based on deltay
+        zoom_factor = 1.0 - deltay / 1000.0
+
+        # Calculate the new range
+        new_range = (endframe - startframe) * zoom_factor
+
+        # Calculate the new start and end frames
+        new_startframe = pos - (pos - startframe) * zoom_factor
+        new_endframe = new_startframe + new_range
+
+        # Update the start and end frames
+        self.widget_layout.waveform_display._startframe = max(0, int(new_startframe))
+        self.widget_layout.waveform_display._endframe = min(len(self.analyzer.data), int(new_endframe))
+
+        # Update the scroll bar maximum value and page step size
+        self.widget_layout.scroll_bar.setMaximum(len(self.analyzer.data) - int(new_range))
+        self.widget_layout.scroll_bar.setPageStep(int(new_range))
+        self.widget_layout.scroll_bar.setValue(self.widget_layout.waveform_display._startframe)    
+        self.widget_layout.waveform_display.update()
 
     def manually_set_play_position(self, value):
         self.data = self.analyzer.data[value:]
 
-    def center_view_on_track_line(self):
-        self.widget_layout.scroll_bar.setValue(len(self.analyzer.data) - len(self.data) + 1/((self.widget_layout.zoom_slider.value() - 80+0.001) / 19) * 1000)
-        self.widget_layout.update_chart()
+    def follow_track_line(self):
+        self.widget_layout.scroll_bar.setValue
+        self.widget_layout.update()
 
     def start_stop_playback(self):
         global is_playing
         if self.widget_layout is not None:
-            if self.data is None: self.data = self.analyzer.data
+            if self.data is None or len(self.data) < 1: self.data = self.analyzer.data
             if self.widget_layout.play_pause_button.text() == "Play":
                 self.widget_layout.play_pause_button.setText("Pause")
                 self.start_audio_playback()
+                self.timer = QTimer()
+                self.timer.timeout.connect(self.update_ui)
+                self.timer.start(20)
                 is_playing = True
             else:
                 self.widget_layout.play_pause_button.setText("Play")
                 self.stop_audio_playback()
+                self.timer.stop()
                 is_playing = False
+
+    def update_ui(self):
+        current_position = len(self.analyzer.data) - len(self.data)
+        self.widget_layout.position_slider.setValue(current_position)
+        
+        if self.widget_layout.follow_line_button.isChecked():
+            startframe = self.widget_layout.waveform_display._startframe
+            endframe = self.widget_layout.waveform_display._endframe
+            self.widget_layout.scroll_bar.setValue(current_position - (endframe - startframe) / 2)
+            self.widget_layout.waveform_display.update_track_line_position(current_position)
+        elif current_position >= self.widget_layout.waveform_display._startframe and current_position <= self.widget_layout.waveform_display._endframe:
+            self.widget_layout.waveform_display.update_track_line_position(current_position)
+        else:
+            self.widget_layout.waveform_display.update_track_line_position(-1)
+
+
+        self.widget_layout.update()
 
     def start_audio_playback(self):
         self.p = pyaudio.PyAudio()
@@ -1046,28 +1086,6 @@ class MainWindow(QMainWindow):
     def callback(self, in_data, frame_count, time_info, status):
         data = self.data[:frame_count]
         self.data = self.data[frame_count:]
-        
-        self.widget_layout.position_slider.setValue(len(self.analyzer.data) - len(self.data))
-        # Calculate the current play position based on the number of frames that have been played
-        current_play_position = len(self.analyzer.data) - len(self.data)
-        
-        # Get the current zoom and scroll values
-        zoom = self.widget_layout.zoom_slider.value() / 100
-        scroll_bar = self.widget_layout.scroll_bar
-        scroll = scroll_bar.value() / len(self.data) if len(self.data) > 0 else len(self.data)-1
-
-        # Adjust the play position based on the zoom and scroll values
-        visible_data_length = int(len(self.data) * (1 - zoom))
-        start = int((len(self.data) - visible_data_length) * scroll)
-        adjusted_play_position = current_play_position - start
-        
-        # Update the play position of the waveform_display widget
-        self.widget_layout.waveform_display.update_play_position(adjusted_play_position)
-        #and if the play position is inside the visible area
-        coeff = (2 * (-len(self.data)/len(self.analyzer.data) + 1) + 1)
-        if zoom == 99/100 and current_play_position > start + visible_data_length / 3 and current_play_position < start + visible_data_length*coeff*5:
-            scroll_bar.setValue(scroll_bar.value() + frame_count + coeff*5) 
-        
         return (data.tobytes(), pyaudio.paContinue)
 
 is_playing = False
