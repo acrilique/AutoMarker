@@ -5,6 +5,7 @@ block_cipher = None
 
 added_files = [
          ('icon.png', '.'),
+         ('icon.ico', '.'),
          ('extension_installer_mac.sh', '.'),
          ('extension_installer_win.bat', '.'),
          ('README.md', '.'),
