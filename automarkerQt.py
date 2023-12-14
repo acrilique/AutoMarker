@@ -14,7 +14,7 @@ import subprocess
 import platform
 import time
 import tempfile
-from distutils.version import StrictVersion
+from packaging.version import parse
 
 ###############################
 ###############################
@@ -194,7 +194,7 @@ def _get_last_exe_mac(app_name):
     app_apps.sort(key=lambda d: d["version"], reverse=True)
     return app_apps[0]["path"]
 
-def _get_last_exe_windows(app_name):
+def _get_last_exe_windows(registry_name, app_name):
     """
     WINDOWS ONLY
     Get the executable path on disk of the last installed application version using windows registry
@@ -202,18 +202,18 @@ def _get_last_exe_windows(app_name):
     :param app_name: (str) name of the application
     :return: (str) path to executable
     """
-    app_versions = _get_installed_softwares_info(app_name.lower())
+    app_versions = _get_installed_softwares_info(registry_name.lower())
     if not app_versions:
-        raise OSError(f"Could not find a {app_name} version installed on this computer")
+        raise OSError(f"Could not find a {registry_name} version installed on this computer")
     # find last installed version
-    last_version_num = sorted([StrictVersion(v["DisplayVersion"]) for v in app_versions])[-1]
+    last_version_num = sorted([parse(v["DisplayVersion"]) for v in app_versions])[-1]
     last_version_info = [v for v in app_versions if v["DisplayVersion"] == str(last_version_num)][0]
     # search actual exe path
     base_path = last_version_info["InstallLocation"]
     build_year = last_version_info["DisplayName"].split(" ")[-1]
     wrong_paths = list()
-    for folder_name in [f"{app_name} CC {{}}", f"{app_name} {{}}", ""]:  # different versions formatting
-        exe_path = os.path.join(base_path, folder_name.format(build_year), f"{app_name}.exe")
+    for folder_name in [f"{registry_name} CC {{}}", f"{registry_name} {{}}", ""]:  # different versions formatting
+        exe_path = os.path.join(base_path, folder_name.format(build_year), "Support Files", f"{app_name}")
         if not os.path.isfile(exe_path):
             wrong_paths.append(exe_path)
             continue
@@ -264,33 +264,29 @@ class AE_JSWrapper(object):
                 self.aeVersion = str(int(time.strftime("%Y")) + 1) # 2024
 
         if WINDOWS_SYSTEM:
-            # Get the AE_ exe path from the registry. 
+            # Get the AE_ exe.
             try:
-                self.aeKey = _winreg.OpenKey(_winreg.HKEY_LOCAL_MACHINE, "SOFTWARE\\Adobe\\After Effects\\" + self.aeVersion)
-            except:
-                print ("ERROR: Unable to find After Effects version " + self.aeVersion + " on this computer\nTo get correct version number please check https://en.wikipedia.org/wiki/Adobe_After_Effects\nFor example, \"After Effect CC 2019\" is version \"16.0\"")
-
-            self.aeApp = _winreg.QueryValueEx(self.aeKey, 'InstallPath')[0] + 'AfterFX.exe'          
+                self.aeApp = _get_last_exe_windows("Adobe After Effects", AFTERFX_PROCESS_NAME)
+            except Exception as e:
+                print (e)
+                pass         
         else:
             guess_path = "/Applications/Adobe After Effects " + self.aeVersion + "/Adobe After Effects " + self.aeVersion + ".app/Contents/aerendercore.app/Contents/MacOS/aerendercore"
             if os.path.exists(guess_path):
                 self.aeApp = guess_path
             else:
                 print ("ERROR: Unable to find After Effects version " + self.aeVersion + " on this computer\nTo get correct version number please check https://en.wikipedia.org/wiki/Adobe_After_Effects\nFor example, \"After Effect CC 2019\" is version \"16.0\"")
-        ## WE SHOULD TRY THIS IN A MAC ENVIRONMENT.
-        # if WINDOWS_SYSTEM:
-        #     # Get the AE_ exe.
-        #     try:
-        #         self.aeApp = _get_last_exe_windows(AFTERFX_PROCESS_NAME)
-        #     except Exception as e:
-        #         print (e)
-        #         pass
         # else:
         #     try:
         #         self.aeApp = _get_last_exe_mac(AFTERFX_PROCESS_NAME)
+        #          # We only need a string like "Adobe After Effects <version>".
+        #         self.aeApp = self.aeApp.replace("/Contents/MacOS/AfterFX", "")
+        #         self.aeApp = os.path.basename(os.path.dirname(self.aeApp))
+        #
         #     except Exception as e:
         #         print (e)
         #         pass
+
         # Get the path to the return file. Create it if it doesn't exist.
         if not len(returnFolder):
             if WINDOWS_SYSTEM:
@@ -572,6 +568,7 @@ class Layout(QWidget):
     # this class is only for the set of widgets that are inside the main window, not menubar or statusbar
     def __init__(self):
         super().__init__()
+        
         self.create_markers_button = QPushButton("Create markers")
         self.create_markers_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.create_markers_button.setMaximumHeight(150)
@@ -579,6 +576,8 @@ class Layout(QWidget):
         
         self.group_box = QGroupBox("")       
         self.group_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed) 
+        self.group_box_layout = QVBoxLayout()
+
         self.every_slider = QSlider(Qt.Horizontal)
         self.every_slider.setRange(1, 16)
         self.every_slider.setValue(4)
@@ -589,7 +588,6 @@ class Layout(QWidget):
         self.offset_slider.setValue(0)
         self.offset_slider.setTickInterval(1)
 
-        self.group_box_layout = QVBoxLayout()
 
         self.every_h_box_layout = QHBoxLayout()
         self.every_label = QLabel("Place markers every x beats")
@@ -609,43 +607,6 @@ class Layout(QWidget):
         self.offset_h_box_layout.addWidget(self.offset_label)
         self.offset_h_box_layout.addWidget(self.offset_text)
         self.group_box_layout.addLayout(self.offset_h_box_layout)
-        self.group_box_layout.addWidget(self.offset_slider)
-
-        self.group_box.setLayout(self.group_box_layout)
-
-        self.left_v_layout = QVBoxLayout()
-        self.left_v_layout.addWidget(self.create_markers_button, 2)
-        self.left_v_layout.addWidget(self.remove_markers_button, 1)
-        self.left_v_layout.addWidget(self.group_box, 1)
-
-        self.h_layout = QHBoxLayout()
-        self.h_layout.addLayout(self.left_v_layout, 1)
-
-        self.setLayout(self.h_layout)
-    
-    def add_preview(self, analyzer_data, beats, sample_rate):
-        self.data = analyzer_data.tolist()
-        self.beats = beats.tolist()
-        self.sample_rate = sample_rate
-
-        self.waveform_display = WaveformDisplay()
-        self.waveform_display.set_samples(self.data, self.beats, channels=1, samplerate=self.sample_rate)
-        self.waveform_display.sizePolicy().setVerticalPolicy(QSizePolicy.Expanding)
-
-        self.position_slider = QSlider(Qt.Horizontal)
-        self.position_slider.setRange(0, len(self.data))
-        self.position_slider.setValue(0)
-
-        self.right_v_layout = QVBoxLayout()
-        self.right_v_layout.addWidget(self.position_slider)
-        self.right_v_layout.addWidget(self.waveform_display)
-
-        self.scroll_bar = QScrollBar(Qt.Horizontal)
-        self.scroll_bar.setRange(0, len(self.data))
-        self.scroll_bar.setValue(0)
-        self.right_v_layout.addWidget(self.scroll_bar)
-
-        self.h_layout.addLayout(self.right_v_layout, 3)
 
         self.global_offset_label = QLabel("Global offset")
         self.left_global_offset_button = QPushButton("<<")
@@ -654,20 +615,57 @@ class Layout(QWidget):
         self.global_offset_buttons_layout.addWidget(self.global_offset_label)
         self.global_offset_buttons_layout.addWidget(self.left_global_offset_button)
         self.global_offset_buttons_layout.addWidget(self.right_global_offset_button)
+
+        self.group_box_layout.addWidget(self.offset_slider)
         self.group_box_layout.addLayout(self.global_offset_buttons_layout)
 
-        self.zoom_slider = QSlider(Qt.Horizontal)
-        self.zoom_slider.setRange(80, 99)
-        self.zoom_slider.setValue(99)
-        self.zoom_slider.setTickInterval(1)
+        self.group_box.setLayout(self.group_box_layout)
 
         self.follow_line_button = QPushButton("Follow line")
         self.follow_line_button.setCheckable(True)
-        self.left_v_layout.addWidget(self.follow_line_button)
 
         self.play_pause_button = QPushButton("Play")
         self.play_pause_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        self.left_v_layout = QVBoxLayout()
+        self.left_v_layout.addWidget(self.create_markers_button, 2)
+        self.left_v_layout.addWidget(self.remove_markers_button, 1)
+        self.left_v_layout.addWidget(self.group_box, 1)
+        self.left_v_layout.addWidget(self.follow_line_button)
         self.left_v_layout.addWidget(self.play_pause_button)
+
+        self.h_layout = QHBoxLayout()
+        self.h_layout.addLayout(self.left_v_layout, 1)
+
+        self.waveform_display = WaveformDisplay()
+        self.waveform_display.sizePolicy().setVerticalPolicy(QSizePolicy.Expanding)
+
+        self.position_slider = QSlider(Qt.Horizontal)
+        self.position_slider.setRange(0, 100)
+        self.position_slider.setValue(0)
+
+        self.right_v_layout = QVBoxLayout()
+        self.right_v_layout.addWidget(self.position_slider)
+        self.right_v_layout.addWidget(self.waveform_display)
+
+        self.h_layout.addLayout(self.right_v_layout, 3)
+
+        self.setLayout(self.h_layout)
+    
+    def add_preview(self, analyzer_data, beats, sample_rate):
+        self.sample_rate = sample_rate
+
+        self.data = analyzer_data.tolist()
+        self.beats = self.beats = [int(beat * sample_rate) for beat in beats]
+        self.waveform_display.set_samples(self.data, self.beats[::4], channels=1, samplerate=self.sample_rate)
+        self.position_slider.setRange(0, len(self.data))
+        self.scroll_bar = QScrollBar(Qt.Horizontal)
+        self.scroll_bar.setRange(0, len(self.data))
+        self.scroll_bar.setValue(0)
+        self.scroll_bar.setSingleStep(sample_rate / 10)
+        self.right_v_layout.addWidget(self.scroll_bar)
+        self.update()
+
 
 class WaveformDisplay(QWidget):
     """Custom widget for waveform representation of a digital audio signal."""
@@ -710,10 +708,17 @@ class WaveformDisplay(QWidget):
     def paintEvent(self, event):
         painter = QPainter()
         painter.begin(self)
-        self.draw_waveform(painter)
-        self.draw_markers(painter)
-        if is_playing == True: self.draw_track_line(painter) 
+        if self._sampleframes is not None and len(self._sampleframes) > 0:
+            self.draw_waveform(painter)
+            self.draw_markers(painter)
+            if is_playing == True: self.draw_track_line(painter) 
+        else:
+            self.draw_text(painter)
         painter.end()
+
+    def draw_text(self, painter):
+        painter.setPen(self.foreground_color)
+        painter.drawText(self.rect(), Qt.AlignCenter, "Select an audio file to start!")
 
     def draw_track_line(self, painter):
         if self.track_line_position < self._endframe and self.track_line_position > self._startframe:
@@ -735,7 +740,7 @@ class WaveformDisplay(QWidget):
         painter.setPen(pen)
 
         width = painter.device().width()
-        visible_samples = len(self._sampleframes[self._startframe:self._endframe])
+        visible_samples = self._endframe - self._startframe
         visible_samples = visible_samples if visible_samples > 0 else 1
 
         for beat in self._beatsamples:
@@ -792,7 +797,7 @@ class WaveformDisplay(QWidget):
 
     def set_samples(self, frames, beats, channels=1, samplerate=SAMPLE_RATE):
         self._sampleframes = frames if frames is not None else []
-        self._beatsamples = beats
+        self._beatsamples = beats if beats is not None else []
         self._channels = channels
         self._samplerate = samplerate
         self.update()
@@ -857,7 +862,7 @@ class MainWindow(QMainWindow):
         QFontDatabase.addApplicationFont(os.path.join(basedir, "WorkSans.ttf"))
         self.setWindowTitle("AutoMarker")
         self.setWindowIcon(QIcon(os.path.join(basedir, "icon.png")))
-        self.resize(260, 240)
+        self.resize(800, 260)
         self.setStyleSheet("""
                            QMainWindow {
                                 background-color: #8B9DE0;
@@ -900,9 +905,19 @@ class MainWindow(QMainWindow):
         self.widget_layout.remove_markers_button.clicked.connect(self.remove_markers)
         self.widget_layout.every_text.textChanged.connect(self.every_text_handler)
         self.widget_layout.offset_text.textChanged.connect(self.offset_text_handler)
-        self.widget_layout.every_slider.valueChanged.connect(lambda: self.widget_layout.every_text.setText(str(self.widget_layout.every_slider.value())))
-        self.widget_layout.offset_slider.valueChanged.connect(lambda: self.widget_layout.offset_text.setText(str(self.widget_layout.offset_slider.value())))
+        self.widget_layout.every_slider.valueChanged.connect(self.every_slider_handler)
+        self.widget_layout.offset_slider.valueChanged.connect(self.offset_slider_handler)
         self.data = None
+
+    def every_slider_handler(self):
+        self.widget_layout.every_text.setText(str(self.widget_layout.every_slider.value()))
+        self.widget_layout.waveform_display._beatsamples = self.widget_layout.beats[self.widget_layout.offset_slider.value()::self.widget_layout.every_slider.value()]
+        self.widget_layout.update()
+
+    def offset_slider_handler(self):
+        self.widget_layout.offset_text.setText(str(self.widget_layout.offset_slider.value()))
+        self.widget_layout.waveform_display._beatsamples = self.widget_layout.beats[self.widget_layout.offset_slider.value()::self.widget_layout.every_slider.value()]
+        self.widget_layout.update()
 
     def every_text_handler(self):
         try:
@@ -922,13 +937,15 @@ class MainWindow(QMainWindow):
         # reduces all beat values (which are in seconds) by 0.1
         self.analyzer.beatsamples -= 0.01
         self.widget_layout.beats = self.analyzer.beatsamples.tolist()
-        self.widget_layout.update_chart()
+        self.widget_layout.waveform_display._beatsamples = self.widget_layout.beats[self.widget_layout.offset_slider.value()::self.widget_layout.every_slider.value()]
+        self.widget_layout.update()
     
     def positive_global_offset(self):
         # increases all beat values (which are in seconds) by 0.1
         self.analyzer.beatsamples += 0.01
         self.widget_layout.beats = self.analyzer.beatsamples.tolist()
-        self.widget_layout.update_chart()
+        self.widget_layout.waveform_display._beatsamples = self.widget_layout.beats[self.widget_layout.offset_slider.value()::self.widget_layout.every_slider.value()]
+        self.widget_layout.update()
 
     def add_markers(self):
         self.statusBar().showMessage("Placing markers...")
@@ -972,7 +989,6 @@ class MainWindow(QMainWindow):
         self.analyzer.start()
     
     def preview(self):
-        self.resize(1000, 500)
         self.statusBar().showMessage("Displaying preview...")
         self.widget_layout.add_preview(self.analyzer.data, self.analyzer.beatsamples, self.analyzer.samplerate)
         self.widget_layout.play_pause_button.clicked.connect(self.start_stop_playback)
@@ -1059,7 +1075,7 @@ class MainWindow(QMainWindow):
         if self.widget_layout.follow_line_button.isChecked():
             startframe = self.widget_layout.waveform_display._startframe
             endframe = self.widget_layout.waveform_display._endframe
-            self.widget_layout.scroll_bar.setValue(current_position - (endframe - startframe) / 2)
+            self.widget_layout.scroll_bar.setValue(current_position - (endframe - startframe) / 3)
             self.widget_layout.waveform_display.update_track_line_position(current_position)
         elif current_position >= self.widget_layout.waveform_display._startframe and current_position <= self.widget_layout.waveform_display._endframe:
             self.widget_layout.waveform_display.update_track_line_position(current_position)
