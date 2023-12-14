@@ -665,8 +665,6 @@ class Layout(QWidget):
         self.scroll_bar.setSingleStep(sample_rate / 10)
         self.right_v_layout.addWidget(self.scroll_bar)
         self.update()
-
-
 class WaveformDisplay(QWidget):
     """Custom widget for waveform representation of a digital audio signal."""
     zoom_signal = Signal(int, int)
@@ -801,7 +799,6 @@ class WaveformDisplay(QWidget):
         self._channels = channels
         self._samplerate = samplerate
         self.update()
-
 class StatusChecker(QThread):
     statusChanged = Signal(str)
 
@@ -831,7 +828,6 @@ class AddMarkersThread(QThread):
         if self.app is not None:
             markers = self.beatsamples.tolist()[self.offset::self.every]
             self.app.addMarkers(markers)
-
 class RemoveMarkersThread(QThread):
 
     finished = Signal()
@@ -936,14 +932,14 @@ class MainWindow(QMainWindow):
     def negative_global_offset(self):
         # reduces all beat values (which are in seconds) by 0.1
         self.analyzer.beatsamples -= 0.01
-        self.widget_layout.beats = self.analyzer.beatsamples.tolist()
+        self.widget_layout.beats = [int(beat * SAMPLE_RATE) for beat in self.analyzer.beatsamples.tolist()]
         self.widget_layout.waveform_display._beatsamples = self.widget_layout.beats[self.widget_layout.offset_slider.value()::self.widget_layout.every_slider.value()]
         self.widget_layout.update()
     
     def positive_global_offset(self):
         # increases all beat values (which are in seconds) by 0.1
         self.analyzer.beatsamples += 0.01
-        self.widget_layout.beats = self.analyzer.beatsamples.tolist()
+        self.widget_layout.beats = [int(beat * SAMPLE_RATE) for beat in self.analyzer.beatsamples.tolist()]
         self.widget_layout.waveform_display._beatsamples = self.widget_layout.beats[self.widget_layout.offset_slider.value()::self.widget_layout.every_slider.value()]
         self.widget_layout.update()
 
@@ -1100,8 +1096,14 @@ class MainWindow(QMainWindow):
         self.p.terminate()
 
     def callback(self, in_data, frame_count, time_info, status):
+        global is_playing
         data = self.data[:frame_count]
         self.data = self.data[frame_count:]
+        if len(data) < frame_count:
+            self.widget_layout.play_pause_button.setText("Play")
+            self.widget_layout.follow_line_button.setChecked(False)
+            is_playing = False
+            return (data.tobytes(), pyaudio.paComplete)
         return (data.tobytes(), pyaudio.paContinue)
 
 is_playing = False
