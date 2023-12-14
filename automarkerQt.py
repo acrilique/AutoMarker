@@ -1025,15 +1025,22 @@ class MainWindow(QMainWindow):
 
         # Calculate the new range
         new_range = (endframe - startframe) * zoom_factor
+        if self.widget_layout.follow_line_button.isChecked():
+            # ignore position and just zoom around the track line which is always at position 0.33*range
+            track_line_pos = 0.33 * new_range
+            new_startframe = track_line_pos - (track_line_pos - startframe) * zoom_factor
+            new_endframe = new_startframe + new_range            
 
-        # Calculate the new start and end frames
-        new_startframe = pos - (pos - startframe) * zoom_factor
-        new_endframe = new_startframe + new_range
+        else:
+            # Calculate the new start and end frames
+            new_startframe = pos - (pos - startframe) * zoom_factor
+            new_endframe = new_startframe + new_range
 
         # Update the start and end frames
         self.widget_layout.waveform_display._startframe = max(0, int(new_startframe))
         self.widget_layout.waveform_display._endframe = min(len(self.analyzer.data), int(new_endframe))
-
+        new_range = self.widget_layout.waveform_display._endframe - self.widget_layout.waveform_display._startframe
+        
         # Update the scroll bar maximum value and page step size
         self.widget_layout.scroll_bar.setMaximum(len(self.analyzer.data) - int(new_range))
         self.widget_layout.scroll_bar.setPageStep(int(new_range))
@@ -1060,6 +1067,8 @@ class MainWindow(QMainWindow):
                 is_playing = True
             else:
                 self.widget_layout.play_pause_button.setText("Play")
+                if self.widget_layout.follow_line_button.isChecked():
+                    self.widget_layout.follow_line_button.setChecked(False)
                 self.stop_audio_playback()
                 self.timer.stop()
                 is_playing = False
