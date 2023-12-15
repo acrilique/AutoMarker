@@ -1,11 +1,12 @@
 # AutoMarker by acrilique.
 # This script is a Qt version of the original automarker.py script by acrilique.
 from PySide6.QtCore import QThread, Signal, Qt, QRect, QLineF, QPointF, QSize, QTimer
-from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QSlider, QPushButton, QLabel, QTextEdit, QScrollBar, QHBoxLayout, QVBoxLayout, QSizePolicy, QGroupBox, QWidget
+from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QDialog, QSlider, QPushButton, QLabel, QTextEdit, QScrollBar, QHBoxLayout, QVBoxLayout, QSizePolicy, QGroupBox, QWidget
 from PySide6.QtGui import QIcon, QPainter, QColor, QLinearGradient, QGradient, QFontDatabase, QFont
 import librosa
 import pyaudio
 import requests
+import numpy as np
 import os
 import sys
 import re
@@ -265,17 +266,20 @@ class AE_JSWrapper(object):
 
         if WINDOWS_SYSTEM:
             # Get the AE_ exe.
-            try:
-                self.aeApp = _get_last_exe_windows("Adobe After Effects", AFTERFX_PROCESS_NAME)
-            except Exception as e:
-                print (e)
-                pass         
-        else:
-            guess_path = "/Applications/Adobe After Effects " + self.aeVersion + "/Adobe After Effects " + self.aeVersion + ".app/Contents/aerendercore.app/Contents/MacOS/aerendercore"
-            if os.path.exists(guess_path):
-                self.aeApp = guess_path
+            if custom_ae_path is not None:
+                self.aeApp = custom_ae_path
             else:
-                print ("ERROR: Unable to find After Effects version " + self.aeVersion + " on this computer\nTo get correct version number please check https://en.wikipedia.org/wiki/Adobe_After_Effects\nFor example, \"After Effect CC 2019\" is version \"16.0\"")
+                try:
+                    self.aeApp = _get_last_exe_windows("Adobe After Effects", AFTERFX_PROCESS_NAME)
+                except Exception as e:
+                    print (e)
+                    pass         
+        # else:
+        #     guess_path = "/Applications/Adobe After Effects " + self.aeVersion + "/Adobe After Effects " + self.aeVersion + ".app/Contents/aerendercore.app/Contents/MacOS/aerendercore"
+        #     if os.path.exists(guess_path):
+        #         self.aeApp = guess_path
+        #     else:
+        #         print ("ERROR: Unable to find After Effects version " + self.aeVersion + " on this computer\nTo get correct version number please check https://en.wikipedia.org/wiki/Adobe_After_Effects\nFor example, \"After Effect CC 2019\" is version \"16.0\"")
         # else:
         #     try:
         #         self.aeApp = _get_last_exe_mac(AFTERFX_PROCESS_NAME)
@@ -643,6 +647,8 @@ class Layout(QWidget):
         self.position_slider = QSlider(Qt.Horizontal)
         self.position_slider.setRange(0, 100)
         self.position_slider.setValue(0)
+        
+        self.scroll_bar = None
 
         self.right_v_layout = QVBoxLayout()
         self.right_v_layout.addWidget(self.position_slider)
@@ -657,13 +663,16 @@ class Layout(QWidget):
 
         self.data = analyzer_data.tolist()
         self.beats = self.beats = [int(beat * sample_rate) for beat in beats]
+
         self.waveform_display.set_samples(self.data, self.beats[::4], channels=1, samplerate=self.sample_rate)
         self.position_slider.setRange(0, len(self.data))
-        self.scroll_bar = QScrollBar(Qt.Horizontal)
+
+        if self.scroll_bar == None: self.scroll_bar = QScrollBar(Qt.Horizontal)
         self.scroll_bar.setRange(0, len(self.data))
         self.scroll_bar.setValue(0)
         self.scroll_bar.setSingleStep(sample_rate / 10)
         self.right_v_layout.addWidget(self.scroll_bar)
+
         self.update()
 class WaveformDisplay(QWidget):
     """Custom widget for waveform representation of a digital audio signal."""
@@ -723,6 +732,7 @@ class WaveformDisplay(QWidget):
             pen = painter.pen()
             pen.setColor(QColor('#ED37A4'))  # Set the color for the track line
             pen.setWidth(2)
+            pen.setStyle(Qt.PenStyle.SolidLine)
             painter.setPen(pen)
             width = painter.device().width()
             x = (self.track_line_position - self._startframe) * width / (self._endframe - self._startframe)
@@ -735,6 +745,7 @@ class WaveformDisplay(QWidget):
         pen = painter.pen()
         pen.setColor(QColor('#254E5C'))  # Set the color for the markers
         pen.setWidth(3)
+        pen.setStyle(Qt.PenStyle.SolidLine)
         painter.setPen(pen)
 
         width = painter.device().width()
@@ -848,8 +859,9 @@ class Analyzer(QThread):
         self.path = path
 
     def run(self):
-        self.data, self.samplerate = librosa.load(path=self.path, sr=SAMPLE_RATE, mono=True)
-        self.tempo, self.beatsamples = librosa.beat.beat_track(y=self.data, units="time", sr=SAMPLE_RATE)
+        self.data, self.samplerate = librosa.load(path=self.path, sr=SAMPLE_RATE, mono=False)
+        self.mono_data = np.mean(self.data, axis=0)
+        self.tempo, self.beatsamples = librosa.beat.beat_track(y=self.mono_data, units="time", sr=SAMPLE_RATE)
 class MainWindow(QMainWindow):
 
     def __init__(self, app):
@@ -881,6 +893,9 @@ class MainWindow(QMainWindow):
         select_file_action = file_menu.addAction("Select audio file")
         select_file_action.triggered.connect(self.select_file)
 
+        custom_paths_action = file_menu.addAction("Select custom paths...")
+        custom_paths_action.triggered.connect(self.select_custom_paths)
+
         readme_action = help_menu.addAction("Readme")
         readme_action.triggered.connect(lambda: os.startfile(os.path.join(basedir, 'README.md')))
 
@@ -904,6 +919,34 @@ class MainWindow(QMainWindow):
         self.widget_layout.every_slider.valueChanged.connect(self.every_slider_handler)
         self.widget_layout.offset_slider.valueChanged.connect(self.offset_slider_handler)
         self.data = None
+
+    def select_custom_paths(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Custom path selection")
+
+        dialog_layout = QVBoxLayout(dialog)
+
+        label = QLabel("Enter the path to the AfterFX.exe file:") if WINDOWS_SYSTEM else QLabel("Please write down the exact version of After Effects you're using (as of now, it's '2024'):")
+        dialog_layout.addWidget(label)
+
+        self.text_edit = QTextEdit()
+        dialog_layout.addWidget(self.text_edit)
+
+        button = QPushButton("OK")
+        button.clicked.connect(dialog.accept)
+        dialog_layout.addWidget(button)
+
+        dialog.exec()        
+        entry_text = self.text_edit.toPlainText()
+        if WINDOWS_SYSTEM:
+            global custom_ae_path
+            if os.path.exists(entry_text):
+                custom_ae_path = entry_text 
+            else:
+                custom_ae_path = None
+            self.current_app = AE_JSInterface()
+        else:
+            self.current_app = AE_JSInterface(entry_text)
 
     def every_slider_handler(self):
         self.widget_layout.every_text.setText(str(self.widget_layout.every_slider.value()))
@@ -960,15 +1003,17 @@ class MainWindow(QMainWindow):
             self.app_status_label.setText("App isn't running...")
             self.current_app = None
         elif (status == "1"):
-            self.current_app = PR_JSInterface()
+            if not isinstance(self.current_app, PR_JSInterface):
+                self.current_app = PR_JSInterface()
             self.app_status_label.setText("Premiere Pro is running!")
         elif (status == "2"):
-            self.current_app = AE_JSInterface()
+            if not isinstance(self.current_app, AE_JSInterface):
+                self.current_app = AE_JSInterface()
             self.app_status_label.setText("After Effects is running!")
         elif (status == "3"):
-            self.current_app = Resolve_Interface()
+            if not isinstance(self.current_app, Resolve_Interface):
+                self.current_app = Resolve_Interface()
             self.app_status_label.setText("Resolve is running!")
-
     def select_file(self):
         self.statusBar().showMessage("Selecting file...")
         file_path, _ = QFileDialog.getOpenFileName(self, "Select an audio file", os.path.expanduser("~"), "Audio files (*.wav *.mp3 *.flac *.ogg *.aiff);;All files (*.*)")
@@ -986,7 +1031,7 @@ class MainWindow(QMainWindow):
     
     def preview(self):
         self.statusBar().showMessage("Displaying preview...")
-        self.widget_layout.add_preview(self.analyzer.data, self.analyzer.beatsamples, self.analyzer.samplerate)
+        self.widget_layout.add_preview(self.analyzer.mono_data, self.analyzer.beatsamples, self.analyzer.samplerate)
         self.widget_layout.play_pause_button.clicked.connect(self.start_stop_playback)
         self.widget_layout.left_global_offset_button.clicked.connect(self.negative_global_offset)
         self.widget_layout.right_global_offset_button.clicked.connect(self.positive_global_offset)
@@ -1004,15 +1049,16 @@ class MainWindow(QMainWindow):
         new_startframe = value
         new_endframe = new_startframe + (endframe - startframe)
 
+        lenght = self.analyzer.data.shape[1]
         # Check if new_endframe exceeds the data length
-        if new_endframe > len(self.analyzer.data):
+        if new_endframe > lenght:
             # Adjust new_startframe to maintain the same range
-            new_startframe -= new_endframe - len(self.analyzer.data)
-            new_endframe = len(self.analyzer.data)
+            new_startframe -= new_endframe - lenght
+            new_endframe = lenght
 
         # Update the start and end frames
         self.widget_layout.waveform_display._startframe = max(0, int(new_startframe))
-        self.widget_layout.waveform_display._endframe = min(len(self.analyzer.data), int(new_endframe))
+        self.widget_layout.waveform_display._endframe = min(lenght, int(new_endframe))
         self.widget_layout.waveform_display.update()
         
     def handle_zoom_signal(self, deltay, pos):
@@ -1038,17 +1084,17 @@ class MainWindow(QMainWindow):
 
         # Update the start and end frames
         self.widget_layout.waveform_display._startframe = max(0, int(new_startframe))
-        self.widget_layout.waveform_display._endframe = min(len(self.analyzer.data), int(new_endframe))
+        self.widget_layout.waveform_display._endframe = min(self.analyzer.data.shape[1], int(new_endframe))
         new_range = self.widget_layout.waveform_display._endframe - self.widget_layout.waveform_display._startframe
         
         # Update the scroll bar maximum value and page step size
-        self.widget_layout.scroll_bar.setMaximum(len(self.analyzer.data) - int(new_range))
+        self.widget_layout.scroll_bar.setMaximum(self.analyzer.data.shape[1] - int(new_range))
         self.widget_layout.scroll_bar.setPageStep(int(new_range))
         self.widget_layout.scroll_bar.setValue(self.widget_layout.waveform_display._startframe)    
         self.widget_layout.waveform_display.update()
 
     def manually_set_play_position(self, value):
-        self.data = self.analyzer.data[value:]
+        self.data = self.analyzer.data[:, value:]
 
     def follow_track_line(self):
         self.widget_layout.scroll_bar.setValue
@@ -1057,14 +1103,14 @@ class MainWindow(QMainWindow):
     def start_stop_playback(self):
         global is_playing
         if self.widget_layout is not None:
-            if self.data is None or len(self.data) < 1: self.data = self.analyzer.data
+            if self.data is None or self.data.shape[1] < 1: self.data = self.analyzer.data
             if self.widget_layout.play_pause_button.text() == "Play":
                 self.widget_layout.play_pause_button.setText("Pause")
                 self.start_audio_playback()
+                is_playing = True
                 self.timer = QTimer()
                 self.timer.timeout.connect(self.update_ui)
                 self.timer.start(20)
-                is_playing = True
             else:
                 self.widget_layout.play_pause_button.setText("Play")
                 if self.widget_layout.follow_line_button.isChecked():
@@ -1074,8 +1120,8 @@ class MainWindow(QMainWindow):
                 is_playing = False
 
     def update_ui(self):
-        current_position = len(self.analyzer.data) - len(self.data)
-        self.widget_layout.position_slider.setValue(current_position)
+        current_position = int(self.analyzer.data.shape[1] - self.data.shape[1])
+        if self.widget_layout.position_slider.value() != current_position: self.widget_layout.position_slider.setValue(current_position)
         
         if self.widget_layout.follow_line_button.isChecked():
             startframe = self.widget_layout.waveform_display._startframe
@@ -1093,7 +1139,7 @@ class MainWindow(QMainWindow):
     def start_audio_playback(self):
         self.p = pyaudio.PyAudio()
         self.stream = self.p.open(format=pyaudio.paFloat32,
-                                  channels=1,
+                                  channels=2,
                                   rate=self.analyzer.samplerate,
                                   output=True,
                                   stream_callback=self.callback)
@@ -1106,14 +1152,18 @@ class MainWindow(QMainWindow):
 
     def callback(self, in_data, frame_count, time_info, status):
         global is_playing
-        data = self.data[:frame_count]
-        self.data = self.data[frame_count:]
-        if len(data) < frame_count:
+        data = self.data[:, :frame_count]
+        self.data = self.data[:, frame_count:]
+        if data.shape[1] < frame_count:
+            print("I got here")
             self.widget_layout.play_pause_button.setText("Play")
             self.widget_layout.follow_line_button.setChecked(False)
             is_playing = False
-            return (data.tobytes(), pyaudio.paComplete)
-        return (data.tobytes(), pyaudio.paContinue)
+            return (data.flatten('F').tobytes(), pyaudio.paComplete)
+        return (data.flatten('F').tobytes(), pyaudio.paContinue)
+
+if WINDOWS_SYSTEM:
+    custom_ae_path = None
 
 is_playing = False
 app = QApplication(sys.argv)
