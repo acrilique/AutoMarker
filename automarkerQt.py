@@ -167,7 +167,7 @@ def _get_pids_from_name(process_name):
     else:
         # use pgrep UNIX command to filter processes by name
         try:
-            output = subprocess.check_output(["pgrep", process_name])
+            output = subprocess.check_output(["pgrep", "-f", process_name])
         except subprocess.CalledProcessError:  # pgrep seems to crash if the given name is not a running process...
             return list()
         # parse output lines
@@ -911,6 +911,11 @@ class MainWindow(QMainWindow):
         self.widget_layout = Layout()
         self.widget_layout.layout()
         self.setCentralWidget(self.widget_layout)
+
+        self.analyzer = None
+        self.add_markers_thread = None
+        self.remove_markers_thread = None
+        
         # Connect the signals
         self.widget_layout.create_markers_button.clicked.connect(self.add_markers)
         self.widget_layout.remove_markers_button.clicked.connect(self.remove_markers)
@@ -919,6 +924,20 @@ class MainWindow(QMainWindow):
         self.widget_layout.every_slider.valueChanged.connect(self.every_slider_handler)
         self.widget_layout.offset_slider.valueChanged.connect(self.offset_slider_handler)
         self.data = None
+
+    def closeEvent(self, event):
+        if self.status_checker.isRunning():
+            self.status_checker.terminate()
+        if self.analyzer is not None:
+            if self.analyzer.isRunning():
+                self.analyzer.terminate()
+        if self.add_markers_thread is not None:
+            if self.add_markers_thread.isRunning():
+                self.add_markers_thread.terminate()
+        if self.remove_markers_thread is not None:
+            if self.remove_markers_thread.isRunning():
+                self.remove_markers_thread.terminate()
+        event.accept()
 
     def select_custom_paths(self):
         dialog = QDialog(self)
