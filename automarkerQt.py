@@ -693,7 +693,7 @@ class WaveformDisplay(QWidget):
         self._samplerate = samplerate
         self.waveform_color = QColor('#DAEEF0') 
         # ~ self.waveform_color = QtGui.QColor(255, 255, 255, 160)
-        self.background_color = QColor('#97A4A6')
+        self.background_color = QColor('#AEBEBF')
         self.background_gradient = QLinearGradient()
         self.background_gradient.setColorAt(0, QColor('#AEBEBF'))
         self.background_gradient.setColorAt(1, QColor('#C3D4D6'))
@@ -727,13 +727,17 @@ class WaveformDisplay(QWidget):
             if self._beatsamples is not None: self.draw_markers(painter)
             if is_playing == True: self.draw_track_line(painter) 
         else:
+            self.draw_background(painter)
             self.draw_text(painter)
         self.draw_border(painter)
         painter.end()
+        
+    def draw_background(self, painter):
+        painter.fillRect(self.rect(), self.background_color)
     
     def draw_border(self, painter):
         pen = painter.pen()
-        pen.setColor(self.foreground_color)
+        pen.setColor("gray")
         pen.setWidth(1)
         pen.setStyle(Qt.PenStyle.SolidLine)
         painter.setPen(pen)
