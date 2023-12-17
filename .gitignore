@@ -6,3 +6,4 @@ audio.wav
 .venv/
 __pycache__/
 .DS_Store
+script.nsi

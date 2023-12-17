@@ -1205,11 +1205,11 @@ class MainWindow(QMainWindow):
         data = self.data[:, :frames]
         self.data = self.data[:, frames:]
         if data.shape[1] < frames:
-            print("I got here")
             self.widget_layout.play_pause_button.setText("Play")
             self.widget_layout.follow_line_button.setChecked(False)
             is_playing = False
             outdata[:] = np.zeros((frames, 2), dtype='float32')
+            raise sd.CallbackStop()
         else:
             outdata[:] = data.T
 
