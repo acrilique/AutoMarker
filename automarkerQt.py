@@ -83,13 +83,18 @@ if flag_content == "not_installed":
         flag_file.write("installed")
         flag_file.close()
 
+def get_default_device_sample_rate():
+    default_device = sd.default.device
+    default_samplerate = sd.query_devices(default_device, 'input')['default_samplerate']
+    return int(default_samplerate)
+
+SAMPLE_RATE = get_default_device_sample_rate()
 CREATE_NO_WINDOW = 0x08000000
 PREMIERE_PROCESS_NAME = "adobe premiere pro.exe" if WINDOWS_SYSTEM else "Adobe Premiere Pro"
 AFTERFX_PROCESS_NAME = "AfterFX.exe" if WINDOWS_SYSTEM else "After Effects"
 RESOLVE_PROCESS_NAME = "Resolve.exe" if WINDOWS_SYSTEM else "Resolve"
 BLENDER_PROCESS_NAME = "blender.exe" if WINDOWS_SYSTEM else "blender"
 CEPPANEL_PROCESS_NAME = "CEPHtmlEngine.exe" if WINDOWS_SYSTEM else "CEPHtmlEngine"
-SAMPLE_RATE = 44100
 
 ###########################################
 ###########################################
@@ -915,7 +920,7 @@ class MainWindow(QMainWindow):
         self.analyzer = None
         self.add_markers_thread = None
         self.remove_markers_thread = None
-        
+
         # Connect the signals
         self.widget_layout.create_markers_button.clicked.connect(self.add_markers)
         self.widget_layout.remove_markers_button.clicked.connect(self.remove_markers)
