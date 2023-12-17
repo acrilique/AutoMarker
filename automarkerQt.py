@@ -1,7 +1,7 @@
 # AutoMarker by acrilique.
 # This script is a Qt version of the original automarker.py script by acrilique.
 from PySide6.QtCore import QThread, Signal, Qt, QRect, QLineF, QPointF, QSize, QTimer
-from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QDialog, QSlider, QPushButton, QLabel, QTextEdit, QScrollBar, QHBoxLayout, QVBoxLayout, QSizePolicy, QGroupBox, QWidget
+from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QDialog, QSlider, QPushButton, QLabel, QTextEdit, QScrollBar, QHBoxLayout, QVBoxLayout, QSizePolicy, QGroupBox, QWidget, QFrame
 from PySide6.QtGui import QIcon, QPainter, QColor, QLinearGradient, QGradient, QFontDatabase, QFont
 import librosa
 import sounddevice as sd
@@ -691,12 +691,12 @@ class WaveformDisplay(QWidget):
         self._beatsamples = beats
         self._channels = channels
         self._samplerate = samplerate
-        self.waveform_color = QColor('#9EB3FF') 
+        self.waveform_color = QColor('#DAEEF0') 
         # ~ self.waveform_color = QtGui.QColor(255, 255, 255, 160)
-        self.background_color = QColor('#8B9DE0')
+        self.background_color = QColor('#97A4A6')
         self.background_gradient = QLinearGradient()
-        self.background_gradient.setColorAt(0, QColor('black'))
-        self.background_gradient.setColorAt(1, QColor('#8B9DE0'))
+        self.background_gradient.setColorAt(0, QColor('#AEBEBF'))
+        self.background_gradient.setColorAt(1, QColor('#C3D4D6'))
         self.background_gradient.setSpread(QGradient.Spread.ReflectSpread)
         self.foreground_color = QColor('white')
         self._startframe = 0
@@ -737,7 +737,7 @@ class WaveformDisplay(QWidget):
     def draw_track_line(self, painter):
         if self.track_line_position < self._endframe and self.track_line_position > self._startframe:
             pen = painter.pen()
-            pen.setColor(QColor('#ED37A4'))  # Set the color for the track line
+            pen.setColor(QColor('#FF2828'))  # Set the color for the track line
             pen.setWidth(2)
             pen.setStyle(Qt.PenStyle.SolidLine)
             painter.setPen(pen)
@@ -750,7 +750,7 @@ class WaveformDisplay(QWidget):
 
     def draw_markers(self, painter):
         pen = painter.pen()
-        pen.setColor(QColor('#254E5C'))  # Set the color for the markers
+        pen.setColor(QColor('#728D6E'))  # Set the color for the markers
         pen.setWidth(3)
         pen.setStyle(Qt.PenStyle.SolidLine)
         painter.setPen(pen)
@@ -885,9 +885,10 @@ class MainWindow(QMainWindow):
         self.resize(800, 260)
         self.setStyleSheet("""
                            QMainWindow {
-                                background-color: #8B9DE0;
+                                background-color: #C3D4D6;
                            } 
                            QGroupBox { 
+                                background-color: #AEBEBF;
                                 border: 1px solid gray; 
                                 border-radius: 7px;
                            }
