@@ -4,7 +4,7 @@ from PySide6.QtCore import QThread, Signal, Qt, QRect, QLineF, QPointF, QSize, Q
 from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QDialog, QSlider, QPushButton, QLabel, QTextEdit, QScrollBar, QHBoxLayout, QVBoxLayout, QSizePolicy, QGroupBox, QWidget
 from PySide6.QtGui import QIcon, QPainter, QColor, QLinearGradient, QGradient, QFontDatabase, QFont
 import librosa
-import pyaudio
+import sounddevice as sd
 import requests
 import numpy as np
 import os
@@ -1100,6 +1100,23 @@ class MainWindow(QMainWindow):
         self.widget_layout.scroll_bar.setValue
         self.widget_layout.update()
 
+    def update_ui(self):
+        current_position = int(self.analyzer.data.shape[1] - self.data.shape[1])
+        if self.widget_layout.position_slider.value() != current_position: self.widget_layout.position_slider.setValue(current_position)
+        
+        if self.widget_layout.follow_line_button.isChecked():
+            startframe = self.widget_layout.waveform_display._startframe
+            endframe = self.widget_layout.waveform_display._endframe
+            self.widget_layout.scroll_bar.setValue(current_position - (endframe - startframe) / 3)
+            self.widget_layout.waveform_display.update_track_line_position(current_position)
+        elif current_position >= self.widget_layout.waveform_display._startframe and current_position <= self.widget_layout.waveform_display._endframe:
+            self.widget_layout.waveform_display.update_track_line_position(current_position)
+        else:
+            self.widget_layout.waveform_display.update_track_line_position(-1)
+
+
+        self.widget_layout.update()
+
     def start_stop_playback(self):
         global is_playing
         if self.widget_layout is not None:
@@ -1119,48 +1136,30 @@ class MainWindow(QMainWindow):
                 self.timer.stop()
                 is_playing = False
 
-    def update_ui(self):
-        current_position = int(self.analyzer.data.shape[1] - self.data.shape[1])
-        if self.widget_layout.position_slider.value() != current_position: self.widget_layout.position_slider.setValue(current_position)
-        
-        if self.widget_layout.follow_line_button.isChecked():
-            startframe = self.widget_layout.waveform_display._startframe
-            endframe = self.widget_layout.waveform_display._endframe
-            self.widget_layout.scroll_bar.setValue(current_position - (endframe - startframe) / 3)
-            self.widget_layout.waveform_display.update_track_line_position(current_position)
-        elif current_position >= self.widget_layout.waveform_display._startframe and current_position <= self.widget_layout.waveform_display._endframe:
-            self.widget_layout.waveform_display.update_track_line_position(current_position)
-        else:
-            self.widget_layout.waveform_display.update_track_line_position(-1)
-
-
-        self.widget_layout.update()
-
     def start_audio_playback(self):
-        self.p = pyaudio.PyAudio()
-        self.stream = self.p.open(format=pyaudio.paFloat32,
-                                  channels=2,
-                                  rate=self.analyzer.samplerate,
-                                  output=True,
-                                  stream_callback=self.callback)
-        self.stream.start_stream()
+        self.stream = sd.OutputStream(
+                                dtype='float32',
+                                channels=self.analyzer.data.shape[0],
+                                samplerate=self.analyzer.samplerate,
+                                callback=self.callback)
+        self.stream.start()
 
     def stop_audio_playback(self):
-        self.stream.stop_stream()
+        self.stream.stop()
         self.stream.close()
-        self.p.terminate()
 
-    def callback(self, in_data, frame_count, time_info, status):
+    def callback(self, outdata, frames, time, status):
         global is_playing
-        data = self.data[:, :frame_count]
-        self.data = self.data[:, frame_count:]
-        if data.shape[1] < frame_count:
+        data = self.data[:, :frames]
+        self.data = self.data[:, frames:]
+        if data.shape[1] < frames:
             print("I got here")
             self.widget_layout.play_pause_button.setText("Play")
             self.widget_layout.follow_line_button.setChecked(False)
             is_playing = False
-            return (data.flatten('F').tobytes(), pyaudio.paComplete)
-        return (data.flatten('F').tobytes(), pyaudio.paContinue)
+            outdata[:] = np.zeros((frames, 2), dtype='float32')
+        else:
+            outdata[:] = data.T
 
 if WINDOWS_SYSTEM:
     custom_ae_path = None
