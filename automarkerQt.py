@@ -663,13 +663,15 @@ class Layout(QWidget):
 
         self.setLayout(self.h_layout)
     
-    def add_preview(self, analyzer_data, beats, sample_rate):
+    def add_beats(self, beats):
+        self.beats = self.beats = [int(beat * SAMPLE_RATE) for beat in beats]
+        self.waveform_display.set_beats(self.beats[::4])
+        self.update()
+
+    def add_preview(self, analyzer_data, sample_rate):
         self.sample_rate = sample_rate
-
         self.data = analyzer_data.tolist()
-        self.beats = self.beats = [int(beat * sample_rate) for beat in beats]
-
-        self.waveform_display.set_samples(self.data, self.beats[::4], channels=1, samplerate=self.sample_rate)
+        self.waveform_display.set_samples(self.data, channels=1, samplerate=self.sample_rate)
         self.position_slider.setRange(0, len(self.data))
 
         if self.scroll_bar == None: self.scroll_bar = QScrollBar(Qt.Horizontal)
@@ -722,7 +724,7 @@ class WaveformDisplay(QWidget):
         painter.begin(self)
         if self._sampleframes is not None and len(self._sampleframes) > 0:
             self.draw_waveform(painter)
-            self.draw_markers(painter)
+            if self._beatsamples is not None: self.draw_markers(painter)
             if is_playing == True: self.draw_track_line(painter) 
         else:
             self.draw_text(painter)
@@ -809,11 +811,14 @@ class WaveformDisplay(QWidget):
         painter.setPen(pen)
         painter.drawLine(QLineF(0.0, zero_y, float(width), zero_y))
 
-    def set_samples(self, frames, beats, channels=1, samplerate=SAMPLE_RATE):
+    def set_samples(self, frames, channels=1, samplerate=SAMPLE_RATE):
         self._sampleframes = frames if frames is not None else []
-        self._beatsamples = beats if beats is not None else []
         self._channels = channels
         self._samplerate = samplerate
+        self.update()
+    
+    def set_beats(self, beats):
+        self._beatsamples = beats if beats is not None else []
         self.update()
 class StatusChecker(QThread):
     statusChanged = Signal(str)
@@ -858,6 +863,7 @@ class RemoveMarkersThread(QThread):
 class Analyzer(QThread):
 
     finished = Signal()
+    data_loaded = Signal()
 
     def __init__(self, path, parent=None):
         super().__init__(parent)
@@ -866,6 +872,7 @@ class Analyzer(QThread):
     def run(self):
         self.data, self.samplerate = librosa.load(path=self.path, sr=SAMPLE_RATE, mono=False)
         self.mono_data = np.mean(self.data, axis=0)
+        self.data_loaded.emit()
         self.tempo, self.beatsamples = librosa.beat.beat_track(y=self.mono_data, units="time", sr=SAMPLE_RATE)
 class MainWindow(QMainWindow):
 
@@ -1038,6 +1045,7 @@ class MainWindow(QMainWindow):
             if not isinstance(self.current_app, Resolve_Interface):
                 self.current_app = Resolve_Interface()
             self.app_status_label.setText("Resolve is running!")
+   
     def select_file(self):
         self.statusBar().showMessage("Selecting file...")
         file_path, _ = QFileDialog.getOpenFileName(self, "Select an audio file", os.path.expanduser("~"), "Audio files (*.wav *.mp3 *.flac *.ogg *.aiff);;All files (*.*)")
@@ -1050,18 +1058,23 @@ class MainWindow(QMainWindow):
     def retreive_and_preview(self):
         self.statusBar().showMessage("Reading file from source...")
         self.analyzer = Analyzer(self.path)
-        self.analyzer.finished.connect(self.preview)
+        self.analyzer.data_loaded.connect(self.preview)
+        self.analyzer.finished.connect(self.beats_preview)
         self.analyzer.start()
     
     def preview(self):
-        self.statusBar().showMessage("Displaying preview...")
-        self.widget_layout.add_preview(self.analyzer.mono_data, self.analyzer.beatsamples, self.analyzer.samplerate)
+        self.statusBar().showMessage("Exctracting beat positions...")
+        self.widget_layout.add_preview(self.analyzer.mono_data, self.analyzer.samplerate)
         self.widget_layout.play_pause_button.clicked.connect(self.start_stop_playback)
         self.widget_layout.left_global_offset_button.clicked.connect(self.negative_global_offset)
         self.widget_layout.right_global_offset_button.clicked.connect(self.positive_global_offset)
         self.widget_layout.position_slider.valueChanged.connect(self.manually_set_play_position)
         self.widget_layout.waveform_display.zoom_signal.connect(self.handle_zoom_signal)
         self.widget_layout.scroll_bar.valueChanged.connect(self.handle_scroll_bar_signal)
+
+    def beats_preview(self):
+        self.statusBar().showMessage("Displaying beats preview...")
+        self.widget_layout.add_beats(self.analyzer.beatsamples)
         self.statusBar().showMessage("Ready")
 
     def handle_scroll_bar_signal(self, value):
