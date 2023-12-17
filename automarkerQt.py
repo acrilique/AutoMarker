@@ -728,8 +728,18 @@ class WaveformDisplay(QWidget):
             if is_playing == True: self.draw_track_line(painter) 
         else:
             self.draw_text(painter)
+        self.draw_border(painter)
         painter.end()
-
+    
+    def draw_border(self, painter):
+        pen = painter.pen()
+        pen.setColor(self.foreground_color)
+        pen.setWidth(1)
+        pen.setStyle(Qt.PenStyle.SolidLine)
+        painter.setPen(pen)
+        rect = self.rect().adjusted(1, 1, -1, -1)  # reduce the size by 1 pixel on each side
+        painter.drawRect(rect)
+        
     def draw_text(self, painter):
         painter.setPen(self.foreground_color)
         painter.drawText(self.rect(), Qt.AlignCenter, "Select an audio file to start!")
