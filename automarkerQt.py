@@ -1,8 +1,8 @@
 # AutoMarker by acrilique.
 # This script is a Qt version of the original automarker.py script by acrilique.
 from PySide6.QtCore import QThread, Signal, Qt, QRect, QLineF, QPointF, QSize, QTimer
-from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QDialog, QSlider, QPushButton, QLabel, QTextEdit, QScrollBar, QHBoxLayout, QVBoxLayout, QSizePolicy, QGroupBox, QWidget, QFrame
-from PySide6.QtGui import QIcon, QPainter, QColor, QLinearGradient, QGradient, QFontDatabase, QFont
+from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QDialog, QSlider, QPushButton, QLabel, QTextEdit, QSpinBox, QScrollBar, QHBoxLayout, QVBoxLayout, QSizePolicy, QGroupBox, QWidget, QFrame
+from PySide6.QtGui import QIcon, QPainter, QColor, QLinearGradient, QGradient, QFontDatabase, QFont, QBrush, QPalette
 import librosa
 import sounddevice as sd
 import requests
@@ -577,7 +577,8 @@ class Layout(QWidget):
     # this class is only for the set of widgets that are inside the main window, not menubar or statusbar
     def __init__(self):
         super().__init__()
-        
+        self.beats = None
+
         self.create_markers_button = QPushButton("Create markers")
         self.create_markers_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.create_markers_button.setMaximumHeight(150)
@@ -597,10 +598,11 @@ class Layout(QWidget):
         self.offset_slider.setValue(0)
         self.offset_slider.setTickInterval(1)
 
-
         self.every_h_box_layout = QHBoxLayout()
         self.every_label = QLabel("Place markers every x beats")
-        self.every_text = QTextEdit("4")
+        self.every_text = QSpinBox()
+        self.every_text.setRange(1, 16)
+        self.every_text.setValue(4)
         self.every_text.setMaximumHeight(24)
         self.every_text.setMaximumWidth(50)
         self.every_h_box_layout.addWidget(self.every_label)
@@ -610,7 +612,9 @@ class Layout(QWidget):
 
         self.offset_h_box_layout = QHBoxLayout()
         self.offset_label = QLabel("Offset first beat")
-        self.offset_text = QTextEdit("0")
+        self.offset_text = QSpinBox()
+        self.offset_text.setRange(0, 16)
+        self.offset_text.setValue(0)
         self.offset_text.setMaximumHeight(24)
         self.offset_text.setMaximumWidth(50)
         self.offset_h_box_layout.addWidget(self.offset_label)
@@ -649,10 +653,8 @@ class Layout(QWidget):
         self.waveform_display = WaveformDisplay()
         self.waveform_display.sizePolicy().setVerticalPolicy(QSizePolicy.Expanding)
 
-        self.position_slider = QSlider(Qt.Horizontal)
-        self.position_slider.setRange(0, 100)
-        self.position_slider.setValue(0)
-        
+        self.position_slider = WaveformSlider()
+                
         self.scroll_bar = None
 
         self.right_v_layout = QVBoxLayout()
@@ -662,6 +664,22 @@ class Layout(QWidget):
         self.h_layout.addLayout(self.right_v_layout, 3)
 
         self.setLayout(self.h_layout)
+        self.setStyleSheet(
+            """
+                           QGroupBox { 
+                                background-color: #B5C6C7;
+                                border: 1px solid gray; 
+                                border-radius: 7px;
+                           }
+                           QSlider::handle::horizontal {
+                                background: #D1E4E6;
+                                border: 1px solid #777;
+                           }
+                           QSlider::handle::horizontal::hover  {
+                                background: #DCF1F2;
+                           }
+"""
+        )
     
     def add_beats(self, beats):
         self.beats = self.beats = [int(beat * SAMPLE_RATE) for beat in beats]
@@ -672,7 +690,7 @@ class Layout(QWidget):
         self.sample_rate = sample_rate
         self.data = analyzer_data.tolist()
         self.waveform_display.set_samples(self.data, channels=1, samplerate=self.sample_rate)
-        self.position_slider.setRange(0, len(self.data))
+        self.position_slider.add_data(self.data)
 
         if self.scroll_bar == None: self.scroll_bar = QScrollBar(Qt.Horizontal)
         self.scroll_bar.setRange(0, len(self.data))
@@ -681,6 +699,80 @@ class Layout(QWidget):
         self.right_v_layout.addWidget(self.scroll_bar)
 
         self.update()
+
+class WaveformSlider(QSlider):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setRange(0, 100)
+        self.setValue(0)
+        self.setOrientation(Qt.Horizontal)
+        self.setStyleSheet("""
+            QSlider::groove:horizontal {
+                border: 1px solid white;
+                background: white;
+                height: 0px;
+                border-radius: 0px;
+            }
+            QSlider::handle:horizontal {
+                background: #728D6E;
+                border: 1px solid #777;
+                width: 2px;
+                margin: -10px 0; /* handle is placed by default on the contents rect of the groove. Expand outside the groove */
+                border-radius: 4px;
+            }                           
+
+""")
+        self.data = None
+    
+    def add_data(self, data):
+        self.data = data[::8]
+        self.setRange(0, len(data))
+        self.update()
+    
+    def paintEvent(self, event):
+        if self.data is not None:
+            painter = QPainter()
+            painter.begin(self)
+            self.draw_waveform(painter)
+            painter.end()
+        super().paintEvent(event)        
+    
+    def draw_waveform(self, painter):
+        pen = painter.pen()
+        pen.setColor("#DAEEF0")  
+        height = painter.device().height()
+        zero_y = float(height) / 2
+        width = painter.device().width()
+        num_frames = len(self.data)
+        samples_per_pixel = num_frames / float(width)
+
+        # draw background
+        brush = QBrush()
+        brush.setColor(QColor('#C3D4D6'))
+        brush.setStyle(Qt.BrushStyle.SolidPattern)
+        rect = QRect(0, 0, width, height)
+        painter.fillRect(rect, brush)
+
+        # draw waveform
+        if self.data is not None:
+            painter.setPen(pen)
+            for pixel in range(width):
+                offset = round(pixel * samples_per_pixel)
+
+                if 0 <= offset < num_frames:
+                    start = offset
+                    end = max(start + 1, start + int(samples_per_pixel))
+                    values = self.data[start:end]
+                    max_value = max(values)
+                    min_value = min(values)
+
+                    if max_value > 0:
+                        y = zero_y - zero_y * max_value
+                        painter.drawLine(QPointF(pixel, zero_y), QPointF(pixel, y))
+                    if min_value < 0:
+                        y = zero_y - zero_y * min_value
+                        painter.drawLine(QPointF(pixel, zero_y), QPointF(pixel, y))
+    
 class WaveformDisplay(QWidget):
     """Custom widget for waveform representation of a digital audio signal."""
     zoom_signal = Signal(int, int)
@@ -900,11 +992,23 @@ class MainWindow(QMainWindow):
         self.setStyleSheet("""
                            QMainWindow {
                                 background-color: #C3D4D6;
+                                color: #363636;
                            } 
-                           QGroupBox { 
-                                background-color: #AEBEBF;
-                                border: 1px solid gray; 
-                                border-radius: 7px;
+                           QPushButton {
+                                background-color: #D1E4E6;
+                                color: black;
+                                border: 1px solid grey;
+                                border-radius: 5px;
+                           }
+                           QPushButton:hover {
+                                background-color: #DCF1F2;
+                                border: 1px solid black;
+                           }
+                           QMenuBar {
+                                background-color: #B7C8C9;
+                           }
+                           QSpinBox {
+                                background-color: #D1E4E6;
                            }
                            QLabel {
                                 color: black;
@@ -995,42 +1099,46 @@ class MainWindow(QMainWindow):
             self.current_app = AE_JSInterface(entry_text)
 
     def every_slider_handler(self):
-        self.widget_layout.every_text.setText(str(self.widget_layout.every_slider.value()))
-        self.widget_layout.waveform_display._beatsamples = self.widget_layout.beats[self.widget_layout.offset_slider.value()::self.widget_layout.every_slider.value()]
+        self.widget_layout.every_text.setValue(self.widget_layout.every_slider.value())
+        if self.widget_layout.beats is not None:
+            self.widget_layout.waveform_display._beatsamples = self.widget_layout.beats[self.widget_layout.offset_slider.value()::self.widget_layout.every_slider.value()]
         self.widget_layout.update()
 
     def offset_slider_handler(self):
-        self.widget_layout.offset_text.setText(str(self.widget_layout.offset_slider.value()))
-        self.widget_layout.waveform_display._beatsamples = self.widget_layout.beats[self.widget_layout.offset_slider.value()::self.widget_layout.every_slider.value()]
+        self.widget_layout.offset_text.setValue(self.widget_layout.offset_slider.value())
+        if self.widget_layout.beats is not None:
+            self.widget_layout.waveform_display._beatsamples = self.widget_layout.beats[self.widget_layout.offset_slider.value()::self.widget_layout.every_slider.value()]
         self.widget_layout.update()
 
     def every_text_handler(self):
         try:
-            value = int(self.widget_layout.every_text.toPlainText())
+            value = self.widget_layout.every_text.value()
         except ValueError:
             value = 1
         self.widget_layout.every_slider.setValue(value)
 
     def offset_text_handler(self):
         try:
-            value = int(self.widget_layout.offset_text.toPlainText())
+            value = self.widget_layout.offset_text.value()
         except ValueError:
             value = 0
         self.widget_layout.offset_slider.setValue(value)
 
     def negative_global_offset(self):
         # reduces all beat values (which are in seconds) by 0.1
-        self.analyzer.beatsamples -= 0.01
-        self.widget_layout.beats = [int(beat * SAMPLE_RATE) for beat in self.analyzer.beatsamples.tolist()]
-        self.widget_layout.waveform_display._beatsamples = self.widget_layout.beats[self.widget_layout.offset_slider.value()::self.widget_layout.every_slider.value()]
-        self.widget_layout.update()
+        if self.widget_layout.beats is not None:
+            self.analyzer.beatsamples -= 0.01
+            self.widget_layout.beats = [int(beat * SAMPLE_RATE) for beat in self.analyzer.beatsamples.tolist()]
+            self.widget_layout.waveform_display._beatsamples = self.widget_layout.beats[self.widget_layout.offset_slider.value()::self.widget_layout.every_slider.value()]
+            self.widget_layout.update()
     
     def positive_global_offset(self):
         # increases all beat values (which are in seconds) by 0.1
-        self.analyzer.beatsamples += 0.01
-        self.widget_layout.beats = [int(beat * SAMPLE_RATE) for beat in self.analyzer.beatsamples.tolist()]
-        self.widget_layout.waveform_display._beatsamples = self.widget_layout.beats[self.widget_layout.offset_slider.value()::self.widget_layout.every_slider.value()]
-        self.widget_layout.update()
+        if self.widget_layout.beats is not None:
+            self.analyzer.beatsamples += 0.01
+            self.widget_layout.beats = [int(beat * SAMPLE_RATE) for beat in self.analyzer.beatsamples.tolist()]
+            self.widget_layout.waveform_display._beatsamples = self.widget_layout.beats[self.widget_layout.offset_slider.value()::self.widget_layout.every_slider.value()]
+            self.widget_layout.update()
 
     def add_markers(self):
         self.statusBar().showMessage("Placing markers...")
@@ -1179,7 +1287,7 @@ class MainWindow(QMainWindow):
                 is_playing = True
                 self.timer = QTimer()
                 self.timer.timeout.connect(self.update_ui)
-                self.timer.start(20)
+                self.timer.start(30)
             else:
                 self.widget_layout.play_pause_button.setText("Play")
                 if self.widget_layout.follow_line_button.isChecked():
@@ -1221,6 +1329,12 @@ app = QApplication(sys.argv)
 
 font = QFont("Work Sans", 9)
 app.setFont(font)
+
+# darkPalette = QPalette()
+# darkPalette.setColor(QPalette.Window, QColor(53, 53, 53))
+# darkPalette.setColor(QPalette.WindowText, Qt.white)
+
+# app.setPalette(darkPalette)
 
 window = MainWindow(app)
 window.show()
