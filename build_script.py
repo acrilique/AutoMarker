@@ -13,7 +13,7 @@ def main():
     # write script.nsi file with version
     with open("script.nsi", "w") as f:
         f.write(
-        f"""
+        f""" 
 ; The name of the installer
 Name "AutoMarker"
 
@@ -33,16 +33,23 @@ InstallDir $PROGRAMFILES\\AutoMarker
 ; overwrite the old one automatically)
 InstallDirRegKey HKLM "Software\\NSIS_Example2\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\AutoMarker" "Install_Dir"
 
+; Import modern ui
+!include "MUI2.nsh"
+
 ;--------------------------------
 
 ; Pages
 
-Page components
-Page directory
-Page instfiles
+!define MUI_ICON "icon.ico"
+!define MUI_HEADERIMAGE
+!define MUI_HEADERIMAGE_BITMAP "icon.bmp"
+!define MUI_HEADERIMAGE_RIGHT
+!define MUI_PAGE_HEADER_TEXT "Welcome to AutoMarker"
+!define MUI_PAGE_HEADER_SUBTEXT "This wizard will guide you through the installation process."
+!insertmacro MUI_PAGE_DIRECTORY
+!insertmacro MUI_PAGE_INSTFILES
 
-UninstPage uninstConfirm
-UninstPage instfiles
+!insertmacro MUI_LANGUAGE "English"
 
 ;--------------------------------
 
@@ -65,7 +72,7 @@ Section "AutoMarker (required)"
     WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\AutoMarker" \\
                                     "UninstallString" "$\\"$INSTDIR\\uninstall.exe$\\""
     WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\AutoMarker" \\
-                                    "DisplayIcon" "$INSTDIR\\_internal\\your_icon.ico"
+                                    "DisplayIcon" "$INSTDIR\\_internal\\icon.ico"
     
 SectionEnd
 
@@ -75,6 +82,9 @@ Section "Start Menu Shortcuts"
     CreateShortcut "$SMPROGRAMS\\AutoMarker.lnk" "$INSTDIR\\AutoMarker.exe"
 
 SectionEnd
+
+;--------------------------------
+
 
 ;--------------------------------
 
