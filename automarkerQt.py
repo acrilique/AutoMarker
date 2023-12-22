@@ -1018,6 +1018,7 @@ class MainWindow(QMainWindow):
                            }
                            """)
         menu_bar = self.menuBar()
+        menu_bar.setMinimumHeight(22)
         file_menu = menu_bar.addMenu("File")
         help_menu = menu_bar.addMenu("Help")
 
@@ -1032,7 +1033,7 @@ class MainWindow(QMainWindow):
 
         status_bar = self.statusBar()
         status_bar.showMessage("Ready")
-        self.app_status_label = QLabel("")
+        self.app_status_label = QLabel("App isn't running...")
         status_bar.addPermanentWidget(self.app_status_label)
 
         self.status_checker = StatusChecker()
@@ -1043,6 +1044,7 @@ class MainWindow(QMainWindow):
         self.widget_layout.layout()
         self.setCentralWidget(self.widget_layout)
 
+        self.current_app = None
         self.analyzer = None
         self.add_markers_thread = None
         self.remove_markers_thread = None
