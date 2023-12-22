@@ -11,7 +11,9 @@ added_files = [
          ('README.md', '.'),
          ('AutoMarker.zxp', '.'),
          ('DaVinciResolveScript.py', '.'),
-         ('WorkSans.ttf','.')
+         ('Inter.ttf','.'),
+         ('arrow_left.svg','.'),
+         ('arrow_right.svg','.')
          ]
 
 a = Analysis(

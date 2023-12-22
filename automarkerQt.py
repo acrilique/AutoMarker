@@ -580,12 +580,14 @@ class Layout(QWidget):
         self.beats = None
 
         self.create_markers_button = QPushButton("Create markers")
-        self.create_markers_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.create_markers_button.setMaximumHeight(150)
+        self.create_markers_button.setMaximumHeight(80)
+        self.create_markers_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.MinimumExpanding) 
         self.remove_markers_button = QPushButton("Remove markers")
-        
+        self.remove_markers_button.setMaximumHeight(80)
+        self.remove_markers_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.MinimumExpanding) 
+
         self.group_box = QGroupBox("")       
-        self.group_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed) 
+        self.group_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.MinimumExpanding) 
         self.group_box_layout = QVBoxLayout()
 
         self.every_slider = QSlider(Qt.Horizontal)
@@ -622,8 +624,13 @@ class Layout(QWidget):
         self.group_box_layout.addLayout(self.offset_h_box_layout)
 
         self.global_offset_label = QLabel("Global offset")
-        self.left_global_offset_button = QPushButton("<<")
-        self.right_global_offset_button = QPushButton(">>")
+
+        self.left_global_offset_button = QPushButton(icon = QIcon(os.path.join(basedir, "arrow_left.svg")))
+        self.left_global_offset_button.setIconSize(QSize(18, 18))
+        
+        self.right_global_offset_button = QPushButton(icon = QIcon(os.path.join(basedir, "arrow_right.svg")))
+        self.right_global_offset_button.setIconSize(QSize(18, 18))
+
         self.global_offset_buttons_layout = QHBoxLayout()
         self.global_offset_buttons_layout.addWidget(self.global_offset_label)
         self.global_offset_buttons_layout.addWidget(self.left_global_offset_button)
@@ -636,9 +643,12 @@ class Layout(QWidget):
 
         self.follow_line_button = QPushButton("Follow line")
         self.follow_line_button.setCheckable(True)
+        self.follow_line_button.setMaximumHeight(80)
+        self.follow_line_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.MinimumExpanding)
 
         self.play_pause_button = QPushButton("Play")
-        self.play_pause_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.play_pause_button.setMaximumHeight(80)
+        self.play_pause_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.MinimumExpanding)
 
         self.left_v_layout = QVBoxLayout()
         self.left_v_layout.addWidget(self.create_markers_button, 2)
@@ -654,6 +664,10 @@ class Layout(QWidget):
         self.waveform_display.sizePolicy().setVerticalPolicy(QSizePolicy.Expanding)
 
         self.position_slider = WaveformSlider()
+        self.position_slider.setMinimumHeight(10)
+        self.position_slider.sizeHint().setHeight(10)
+        self.position_slider.setMaximumHeight(80)
+        self.position_slider.sizePolicy().setVerticalPolicy(QSizePolicy.Minimum)
                 
         self.scroll_bar = None
 
@@ -667,16 +681,20 @@ class Layout(QWidget):
         self.setStyleSheet(
             """
                            QGroupBox { 
-                                background-color: #B5C6C7;
+                                background-color: #30323D;
                                 border: 1px solid gray; 
                                 border-radius: 7px;
                            }
+                           QLabel {
+                                color: #F4F2F3;
+                           }
                            QSlider::handle::horizontal {
-                                background: #D1E4E6;
+                                background: #BEC1D2;
                                 border: 1px solid #777;
                            }
                            QSlider::handle::horizontal::hover  {
-                                background: #DCF1F2;
+                                background: #CFD3E9;
+                                border: 1px solid #777;                                
                            }
 """
         )
@@ -708,17 +726,17 @@ class WaveformSlider(QSlider):
         self.setOrientation(Qt.Horizontal)
         self.setStyleSheet("""
             QSlider::groove:horizontal {
-                border: 1px solid white;
-                background: white;
+                border: 1px solid #F4F2F3;
+                background: #F4F2F3;
                 height: 0px;
                 border-radius: 0px;
             }
             QSlider::handle:horizontal {
-                background: #728D6E;
-                border: 1px solid #777;
-                width: 2px;
+                background: #30323D;
+                border: 0px;
+                width: 8px;
                 margin: -10px 0; /* handle is placed by default on the contents rect of the groove. Expand outside the groove */
-                border-radius: 4px;
+                border-radius: 0px;
             }                           
 
 """)
@@ -739,7 +757,7 @@ class WaveformSlider(QSlider):
     
     def draw_waveform(self, painter):
         pen = painter.pen()
-        pen.setColor("#DAEEF0")  
+        pen.setColor("#BEC1D2")  
         height = painter.device().height()
         zero_y = float(height) / 2
         width = painter.device().width()
@@ -748,7 +766,7 @@ class WaveformSlider(QSlider):
 
         # draw background
         brush = QBrush()
-        brush.setColor(QColor('#C3D4D6'))
+        brush.setColor(QColor('#595C70'))
         brush.setStyle(Qt.BrushStyle.SolidPattern)
         rect = QRect(0, 0, width, height)
         painter.fillRect(rect, brush)
@@ -772,7 +790,6 @@ class WaveformSlider(QSlider):
                     if min_value < 0:
                         y = zero_y - zero_y * min_value
                         painter.drawLine(QPointF(pixel, zero_y), QPointF(pixel, y))
-    
 class WaveformDisplay(QWidget):
     """Custom widget for waveform representation of a digital audio signal."""
     zoom_signal = Signal(int, int)
@@ -783,14 +800,14 @@ class WaveformDisplay(QWidget):
         self._beatsamples = beats
         self._channels = channels
         self._samplerate = samplerate
-        self.waveform_color = QColor('#DAEEF0') 
+        self.waveform_color = QColor('#5EA48E') 
         # ~ self.waveform_color = QtGui.QColor(255, 255, 255, 160)
-        self.background_color = QColor('#AEBEBF')
+        self.background_color = QColor('#30323D')
         self.background_gradient = QLinearGradient()
         self.background_gradient.setColorAt(0, QColor('#AEBEBF'))
         self.background_gradient.setColorAt(1, QColor('#C3D4D6'))
         self.background_gradient.setSpread(QGradient.Spread.ReflectSpread)
-        self.foreground_color = QColor('white')
+        self.foreground_color = QColor('#F4F2F3')
         self._startframe = 0
         self._endframe = self._samplerate*10
         self.track_line_position = 0
@@ -843,7 +860,7 @@ class WaveformDisplay(QWidget):
     def draw_track_line(self, painter):
         if self.track_line_position < self._endframe and self.track_line_position > self._startframe:
             pen = painter.pen()
-            pen.setColor(QColor('#FF2828'))  # Set the color for the track line
+            pen.setColor(QColor('#C45ECE'))  # Set the color for the track line
             pen.setWidth(2)
             pen.setStyle(Qt.PenStyle.SolidLine)
             painter.setPen(pen)
@@ -856,7 +873,7 @@ class WaveformDisplay(QWidget):
 
     def draw_markers(self, painter):
         pen = painter.pen()
-        pen.setColor(QColor('#728D6E'))  # Set the color for the markers
+        pen.setColor(QColor('#F4F2F3'))  # Set the color for the markers
         pen.setWidth(3)
         pen.setStyle(Qt.PenStyle.SolidLine)
         painter.setPen(pen)
@@ -884,10 +901,11 @@ class WaveformDisplay(QWidget):
         # ~ brush = QtGui.QBrush()
         # ~ brush.setColor(self.background_color)
         # ~ brush.setStyle(Qt.BrushStyle.SolidPattern)
-        self.background_gradient.setStart(0.0, zero_y)
-        self.background_gradient.setFinalStop(0.0, 0.0)
+        # self.background_gradient.setStart(0.0, zero_y)
+        # self.background_gradient.setFinalStop(0.0, 0.0)
+        
         rect = QRect(0, 0, width, height)
-        painter.fillRect(rect, self.background_gradient)
+        painter.fillRect(rect, self.background_color)
         startframe = self._startframe
 
         # draw waveform
@@ -985,36 +1003,36 @@ class MainWindow(QMainWindow):
     def __init__(self, app):
         super().__init__()
         self.app = app
-        QFontDatabase.addApplicationFont(os.path.join(basedir, "WorkSans.ttf"))
+        QFontDatabase.addApplicationFont(os.path.join(basedir, "Inter.ttf"))
         self.setWindowTitle("AutoMarker")
         self.setWindowIcon(QIcon(os.path.join(basedir, "icon.png")))
         self.resize(800, 260)
         self.setStyleSheet("""
                            QMainWindow {
-                                background-color: #C3D4D6;
+                                background-color: #595C70;
                                 color: #363636;
                            } 
                            QPushButton {
-                                background-color: #D1E4E6;
+                                background-color: #BEC1D2;
                                 color: black;
                                 border: 1px solid grey;
                                 border-radius: 5px;
                            }
                            QPushButton:hover {
-                                background-color: #DCF1F2;
+                                background-color: #CFD3E9;
                                 border: 1px solid black;
                            }
                            QMenuBar {
-                                background-color: #B7C8C9;
+                                background-color: #BEC1D2;
                            }
                            QSpinBox {
-                                background-color: #D1E4E6;
+                                background-color: #CFD3E9;
                            }
                            QLabel {
-                                color: black;
+                                color: #F4F2F3;
                            }
                            QStatusBar {
-                                color: black;
+                                color: #F4F2F3;
                            }
                            """)
         menu_bar = self.menuBar()
@@ -1329,7 +1347,7 @@ if WINDOWS_SYSTEM:
 is_playing = False
 app = QApplication(sys.argv)
 
-font = QFont("Work Sans", 9)
+font = QFont("Inter", 9)
 app.setFont(font)
 
 # darkPalette = QPalette()
