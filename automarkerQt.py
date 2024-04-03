@@ -1,7 +1,7 @@
 # AutoMarker by acrilique.
 # This script is a Qt version of the original automarker.py script by acrilique.
 from PySide6.QtCore import QThread, Signal, Qt, QRect, QLineF, QPointF, QSize, QTimer
-from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QDialog, QSlider, QPushButton, QLabel, QTextEdit, QSpinBox, QScrollBar, QHBoxLayout, QVBoxLayout, QSizePolicy, QGroupBox, QWidget, QFrame
+from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QDialog, QSlider, QComboBox, QPushButton, QLabel, QTextEdit, QSpinBox, QScrollBar, QHBoxLayout, QVBoxLayout, QSizePolicy, QGroupBox, QWidget, QFrame
 from PySide6.QtGui import QIcon, QPainter, QColor, QLinearGradient, QGradient, QFontDatabase, QFont, QBrush, QPalette
 import librosa
 import sounddevice as sd
@@ -85,9 +85,9 @@ if flag_content == "not_installed":
 
 def get_default_device_sample_rate():
     default_device = sd.default.device
-    default_samplerate = sd.query_devices(default_device, 'input')['default_samplerate']
+    default_samplerate = sd.query_devices(default_device, 'output')['default_samplerate']
     return int(default_samplerate)
-
+ 
 SAMPLE_RATE = get_default_device_sample_rate()
 CREATE_NO_WINDOW = 0x08000000
 PREMIERE_PROCESS_NAME = "adobe premiere pro.exe" if WINDOWS_SYSTEM else "Adobe Premiere Pro"
@@ -459,10 +459,16 @@ class PR_JSInterface(object):
         self.prCom.jsxTodo = f"""
 
         for (var i = 0; i < {list}.length;  i++) {{
+            var compas = {compas};
             $.writeln("list[i]: " + {list}[i]);
             $.writeln("end: " + app.project.activeSequence.end);
             if ({list}[i] < app.project.activeSequence.end)
-            app.project.activeSequence.markers.createMarker({list}[i]);
+            marker = app.project.activeSequence.markers.createMarker({list}[i]);
+            if i % compas == 0 {{
+                marker.setColorByIndex({first_beat_color});
+            }} else {{
+                marker.setColorByIndex({other_beat_color});
+            }}
         }}             
 
         """
@@ -874,7 +880,7 @@ class WaveformDisplay(QWidget):
     def draw_markers(self, painter):
         pen = painter.pen()
         pen.setColor(QColor('#F4F2F3'))  # Set the color for the markers
-        pen.setWidth(3)
+        pen.setWidth(1)
         pen.setStyle(Qt.PenStyle.SolidLine)
         painter.setPen(pen)
 
@@ -998,12 +1004,89 @@ class Analyzer(QThread):
         self.mono_data = np.mean(self.data, axis=0)
         self.data_loaded.emit()
         self.tempo, self.beatsamples = librosa.beat.beat_track(y=self.mono_data, units="time", sr=SAMPLE_RATE)
+class ColorDialog(QDialog):
+
+    color_dict = {
+        0: "Green",
+        1: "Red",
+        2: "Purple",
+        3: "Orange",
+        4: "Yellow",
+        5: "White",
+        6: "Blue",
+        7: "Cyan"
+    }
+
+    def __init__(self, parent=None, first_beat_color=0, other_beat_color=1, compas=4):
+        super().__init__(parent)
+        self.setWindowTitle("Markers color")
+        self.setWindowIcon(QIcon(os.path.join(basedir, "icon.png")))
+        self.resize(300, 100)
+        self.first_beat_color = 0
+        self.other_beat_color = 1
+        self.compas = 4
+        self.layout = QVBoxLayout(self)
+
+        self.colorLabel = QLabel(f"First beat: {self.color_dict[first_beat_color]}, other beats: {self.color_dict[other_beat_color]}")
+        self.colorLabel.setAlignment(Qt.AlignCenter)
+        self.colorLabel.setStyleSheet(f"QLabel {{ color: black }}")
+
+        self.compasSlider = QSlider(Qt.Horizontal)
+        self.compasSlider.setRange(2, 16)
+        self.compasSlider.setValue(self.compas)
+        self.compasSlider.setTickInterval(1)
+        
+        self.first_comboBox = QComboBox()
+        self.first_comboBox.setGeometry(QRect(40, 40, 221, 22))
+        self.first_comboBox.addItem("Green")
+        self.first_comboBox.addItem("Red")
+        self.first_comboBox.addItem("Purple")
+        self.first_comboBox.addItem("Orange")
+        self.first_comboBox.addItem("Yellow")
+        self.first_comboBox.addItem("White")
+        self.first_comboBox.addItem("Blue")
+        self.first_comboBox.addItem("Cyan")
+
+        self.other_comboBox = QComboBox()
+        self.other_comboBox.setGeometry(QRect(40, 40, 221, 22))
+        self.other_comboBox.addItem("Green")
+        self.other_comboBox.addItem("Red")
+        self.other_comboBox.addItem("Purple")
+        self.other_comboBox.addItem("Orange")
+        self.other_comboBox.addItem("Yellow")
+        self.other_comboBox.addItem("White")
+        self.other_comboBox.addItem("Blue")
+        self.other_comboBox.addItem("Cyan")
+
+        self.compasSlider.valueChanged.connect(self.handle_compas_change)
+        self.first_comboBox.currentIndexChanged.connect(self.handle_first_beat_color_change)
+        self.other_comboBox.currentIndexChanged.connect(self.handle_other_beat_color_change)
+        
+        self.okButton = QPushButton("OK")
+        self.okButton.clicked.connect(self.accept)
+
+        self.layout.addWidget(self.colorLabel)
+        self.layout.addWidget(self.compasSlider)
+        self.layout.addWidget(self.first_comboBox)
+        self.layout.addWidget(self.other_comboBox)
+        self.layout.addWidget(self.okButton)
+
+    def handle_first_beat_color_change(self, color):
+        self.first_beat_color = color
+        self.colorLabel = QLabel(f"First beat: {self.color_dict[color]}, other beats: {self.color_dict[self.other_beat_color]}")
+
+    def handle_other_beat_color_change(self, color):
+        self.other_beat_color = color
+        self.colorLabel = QLabel(f"First beat: {self.color_dict[self.first_beat_color]}, other beats: {self.color_dict[color]}")
+
+    def handle_compas_change(self, compas):
+        self.compas = compas
 class MainWindow(QMainWindow):
 
     def __init__(self, app):
         super().__init__()
         self.app = app
-        QFontDatabase.addApplicationFont(os.path.join(basedir, "Inter.ttf"))
+        QFontDatabase.addApplicationFont(os.path.join(basedir, "Outfit.ttf"))
         self.setWindowTitle("AutoMarker")
         self.setWindowIcon(QIcon(os.path.join(basedir, "icon.png")))
         self.resize(800, 260)
@@ -1023,7 +1106,7 @@ class MainWindow(QMainWindow):
                                 border: 1px solid black;
                            }
                            QMenuBar {
-                                background-color: #BEC1D2;
+                                background-color: #F1F3F9;
                            }
                            QSpinBox {
                                 background-color: #CFD3E9;
@@ -1039,16 +1122,19 @@ class MainWindow(QMainWindow):
         menu_bar.setMinimumHeight(22)
         file_menu = menu_bar.addMenu("File")
         help_menu = menu_bar.addMenu("Help")
-
+        
         select_file_action = file_menu.addAction("Select audio file")
         select_file_action.triggered.connect(self.select_file)
 
         custom_paths_action = file_menu.addAction("Select custom paths...")
         custom_paths_action.triggered.connect(self.select_custom_paths)
 
+        markers_color_action = file_menu.addAction("Markers color")
+        markers_color_action.triggered.connect(self.select_markers_color)
+
         readme_action = help_menu.addAction("Readme")
         readme_action.triggered.connect(lambda: os.startfile(os.path.join(basedir, 'README.md')))
-
+        
         status_bar = self.statusBar()
         status_bar.showMessage("Ready")
         self.app_status_label = QLabel("App isn't running...")
@@ -1075,6 +1161,14 @@ class MainWindow(QMainWindow):
         self.widget_layout.every_slider.valueChanged.connect(self.every_slider_handler)
         self.widget_layout.offset_slider.valueChanged.connect(self.offset_slider_handler)
         self.data = None
+
+    def select_markers_color(self):
+        global first_beat_color, other_beat_color, compas
+        dialog = ColorDialog(self, first_beat_color, other_beat_color, compas)
+        if dialog.exec() == 1:
+            first_beat_color = dialog.first_beat_color
+            other_beat_color = dialog.other_beat_color
+            compas = dialog.compas
 
     def closeEvent(self, event):
         if self.status_checker.isRunning():
@@ -1206,7 +1300,7 @@ class MainWindow(QMainWindow):
         self.analyzer.start()
     
     def preview(self):
-        self.statusBar().showMessage("Exctracting beat positions...")
+        self.statusBar().showMessage("Extracting beat positions...")
         self.widget_layout.add_preview(self.analyzer.mono_data, self.analyzer.samplerate)
         self.widget_layout.play_pause_button.clicked.connect(self.start_stop_playback)
         self.widget_layout.left_global_offset_button.clicked.connect(self.negative_global_offset)
@@ -1347,8 +1441,12 @@ if WINDOWS_SYSTEM:
 is_playing = False
 app = QApplication(sys.argv)
 
-font = QFont("Inter", 9)
+font = QFont("Outfit Medium", 9)
 app.setFont(font)
+
+first_beat_color = 0
+other_beat_color = 1
+compas = 4
 
 # darkPalette = QPalette()
 # darkPalette.setColor(QPalette.Window, QColor(53, 53, 53))
